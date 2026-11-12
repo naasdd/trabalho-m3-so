@@ -2,12 +2,12 @@ CC      = gcc
 CFLAGS  = -std=c11 -Wall -Wextra -pedantic -g
 SRC     = $(wildcard src/*.c)
 OBJ     = $(SRC:.c=.o)
-BIN     = fs
+BIN     = minifs
 
 $(BIN): $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 
-src/%.o: src/%.c src/fs.h src/shell.h
+src/%.o: src/%.c src/sistema_arquivos.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 run: $(BIN)

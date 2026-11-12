@@ -1,13 +1,17 @@
 /*
- * main.c - Ponto de entrada do mini-sistema de arquivos em memória.
+ * main.c
+ *
+ * Ponto de entrada do programa. Só faz três coisas, em ordem:
+ *   1. monta o sistema de arquivos (pasta "/" e disco vazio)
+ *   2. abre o terminal e espera os comandos
+ *   3. quando o usuário digita "exit", libera toda a memória
  */
-#include "fs.h"
-#include "shell.h"
+#include "sistema_arquivos.h"
 
 int main(void)
 {
-    fs_init();      /* cria a raiz "/" e zera o disco simulado */
-    shell_run();    /* loop de comandos até 'exit' ou Ctrl+D   */
-    fs_destroy();   /* libera toda a árvore (sem memory leak)  */
+    iniciar_sistema_de_arquivos();
+    rodar_terminal();
+    encerrar_sistema_de_arquivos();
     return 0;
 }

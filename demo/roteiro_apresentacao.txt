@@ -1,0 +1,83 @@
+# ============================================================
+# PARTE 1 - Pastas em árvore (objetivo 3.1)
+# ============================================================
+whoami
+mkdir home
+chmod 777 home
+su alice
+cd home
+mkdir alice
+mkdir projetos
+ls -l
+cd alice
+pwd
+cd ..
+pwd
+cd /home/alice
+# ============================================================
+# PARTE 2 - Arquivos e o FCB / inode (objetivo 3.2)
+# ============================================================
+echo ola professor > notas.txt
+cat notas.txt
+echo segunda linha >> notas.txt
+cat notas.txt
+stat notas.txt
+# cp cria um arquivo NOVO: inode novo e blocos novos
+cp notas.txt copia.txt
+stat copia.txt
+# mv NAO copia: mesmo inode, so troca o nome
+mv copia.txt renomeado.txt
+stat renomeado.txt
+mv renomeado.txt ../projetos
+ls /home/projetos
+ls -l
+# ============================================================
+# PARTE 3 - Disco simulado em blocos (objetivo 3.4)
+# ============================================================
+disk
+echo este texto tem mais de cento e vinte e oito bytes para ocupar tres blocos de sessenta e quatro bytes no disco simulado do trabalho > grande.txt
+stat grande.txt
+# apagar abre um "buraco" no disco (o bloco do notas.txt)
+rm notas.txt
+disk
+# o arquivo novo usa os buracos: blocos NAO seguidos (alocacao indexada)
+echo outro texto grande que precisa de tres blocos para caber e por isso vai usar o buraco que ficou livre e mais dois blocos no fim do disco > espalhado.txt
+stat espalhado.txt
+disk
+# ============================================================
+# PARTE 4 - Permissoes RWX (objetivo 3.3)
+# ============================================================
+echo echo rodando o script da alice > script.sh
+ls -l
+# alice e a dona, mas o arquivo nasceu sem x (644)
+./script.sh
+chmod 754 script.sh
+ls -l
+./script.sh
+# bob esta no MESMO GRUPO da alice: vale o trio do grupo (r-x)
+su bob
+whoami
+./script.sh
+echo tentando alterar > script.sh
+# guest e de OUTRO grupo: vale o trio dos outros (r--)
+su guest
+whoami
+cat script.sh
+./script.sh
+chmod 777 script.sh
+rm script.sh
+mkdir invasao
+# root ignora as permissoes
+su root
+./script.sh
+# ============================================================
+# PARTE 5 - Tratamento de erros
+# ============================================================
+cd /nao/existe
+mkdir a/b
+cat /home
+rmdir /home
+mv /home /home/alice
+chmod 9 /home
+comando_inventado
+exit

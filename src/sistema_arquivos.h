@@ -38,6 +38,7 @@
 /* Alocação indexada: cada arquivo pode usar no máximo 16 blocos.
  * Logo, o maior arquivo possível tem 16 * 64 = 1024 bytes. */
 #define MAXIMO_DE_BLOCOS_POR_ARQUIVO  16
+#define TAMANHO_MAXIMO_DO_ARQUIVO     (MAXIMO_DE_BLOCOS_POR_ARQUIVO * TAMANHO_DO_BLOCO)
 
 /*
  * PERMISSÕES (igual ao Linux)
@@ -130,6 +131,13 @@ typedef struct NoArvore {
     struct NoArvore *proximo_irmao;
 } NoArvore;
 
+/* O que pode acontecer ao tentar gravar um conteúdo no disco. */
+typedef enum {
+    GRAVOU_COM_SUCESSO,
+    ERRO_ARQUIVO_GRANDE_DEMAIS,   /* precisaria de mais de 16 blocos       */
+    ERRO_DISCO_CHEIO              /* não sobrou bloco livre suficiente     */
+} ResultadoDaGravacao;
+
 /* Um usuário do sistema simulado. */
 typedef struct {
     int  id_do_usuario;
@@ -161,12 +169,17 @@ NoArvore *encontrar_pelo_caminho(const char *caminho);
 void      montar_caminho_completo(NoArvore *no, char *destino, size_t tamanho_destino);
 bool      nome_e_valido(const char *nome);
 bool      e_diretorio(NoArvore *no);
+bool      separar_pasta_e_nome(const char *caminho, NoArvore **pasta_encontrada, char *nome_encontrado);
+void      remover_filho_da_pasta(NoArvore *pasta, NoArvore *filho);
+void      liberar_no_e_todos_os_filhos(NoArvore *no);
+bool      esta_dentro_de(NoArvore *possivel_descendente, NoArvore *pasta);
 
 /* ---------- comandos_diretorio.c : 3.1 ---------- */
 void comando_mkdir(const char *nome);
 void comando_cd(const char *caminho);
 void comando_ls(const char *caminho, bool formato_detalhado);
 void comando_pwd(void);
+void comando_rmdir(const char *caminho);
 
 /* ---------- comandos_arquivo.c : 3.2 ---------- */
 void comando_touch(const char *nome);
@@ -176,6 +189,7 @@ void comando_cp(const char *origem, const char *destino);
 void comando_mv(const char *origem, const char *destino);
 void comando_rm(const char *nome);
 void comando_stat(const char *nome);
+void comando_executar(const char *nome);
 
 /* ---------- permissoes.c : 3.3 ---------- */
 bool usuario_tem_permissao(const FCB *fcb, const Usuario *usuario, int permissao_desejada);
@@ -186,7 +200,8 @@ void comando_chmod(const char *modo, const char *nome);
 void   iniciar_disco(void);
 int    reservar_bloco_livre(void);
 void   liberar_bloco(int numero_do_bloco);
-bool   gravar_conteudo_no_disco(FCB *fcb, const char *conteudo, size_t tamanho);
+int    contar_blocos_livres(void);
+ResultadoDaGravacao gravar_conteudo_no_disco(FCB *fcb, const char *conteudo, size_t tamanho);
 size_t ler_conteudo_do_disco(const FCB *fcb, char *destino, size_t tamanho_destino);
 void   liberar_todos_os_blocos_do_arquivo(FCB *fcb);
 void   comando_disk(void);

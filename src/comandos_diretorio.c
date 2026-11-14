@@ -148,6 +148,41 @@ void comando_ls(const char *caminho, bool formato_detalhado)
 }
 
 
+/* rmdir <pasta> : apaga uma pasta VAZIA (igual ao Linux) */
+void comando_rmdir(const char *caminho)
+{
+    NoArvore *pasta = encontrar_pelo_caminho(caminho);
+
+    if (pasta == NULL) {
+        printf("rmdir: '%s': não encontrado\n", caminho);
+        return;
+    }
+    if (!e_diretorio(pasta)) {
+        printf("rmdir: '%s': não é um diretório (use rm)\n", caminho);
+        return;
+    }
+    /* Não dá para apagar a pasta onde você está, nem uma acima dela */
+    if (pasta == raiz || esta_dentro_de(diretorio_atual, pasta)) {
+        printf("rmdir: '%s': não é possível remover a pasta atual ou uma acima dela\n", caminho);
+        return;
+    }
+    if (pasta->primeiro_filho != NULL) {
+        printf("rmdir: '%s': a pasta não está vazia\n", caminho);
+        return;
+    }
+
+    NoArvore *pasta_de_cima = pasta->pai;
+    if (!usuario_tem_permissao(&pasta_de_cima->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
+        printf("rmdir: '%s': permissão negada\n", caminho);
+        return;
+    }
+
+    remover_filho_da_pasta(pasta_de_cima, pasta);
+    liberar_no_e_todos_os_filhos(pasta);
+    pasta_de_cima->fcb.data_de_modificacao = time(NULL);
+}
+
+
 /* pwd : mostra o caminho da pasta atual */
 void comando_pwd(void)
 {

@@ -5,6 +5,7 @@
  * para dono, grupo e outros, usando operações com bits.
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "sistema_arquivos.h"
 
@@ -123,11 +124,66 @@ void montar_texto_de_permissoes(const FCB *fcb, char destino[11])
 }
 
 
-/* chmod <modo> <nome> : ex.: chmod 754 arquivo.txt
- * TODO: implementar juntos. */
-void comando_chmod(const char *modo, const char *nome)
+/* O modo precisa ter exatamente 3 dígitos, cada um de 0 a 7. Ex.: "754" */
+static bool modo_e_valido(const char *modo)
 {
-    (void)modo;
-    (void)nome;
-    printf("chmod: ainda não implementado\n");
+    if (strlen(modo) != 3) {
+        return false;
+    }
+    for (int i = 0; i < 3; i++) {
+        if (modo[i] < '0' || modo[i] > '7') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * Converte o texto "754" no número de permissões (0754).
+ *
+ * Cada dígito vai para o seu trio usando "<<" (empurrar bits para a esquerda),
+ * e o "|" (OU bit a bit) junta os três trios num número só:
+ *
+ *   dono   = 7 = 111   -> 7 << 6 = 111 000 000
+ *   grupo  = 5 = 101   -> 5 << 3 =     101 000
+ *   outros = 4 = 100   -> 4 << 0 =         100
+ *                                  -----------  (OU)
+ *                                  111 101 100  = 0754 = rwxr-xr--
+ */
+static int converter_modo_para_permissoes(const char *modo)
+{
+    /* Subtrair '0' transforma o caractere '7' no número 7 */
+    int digito_dono   = modo[0] - '0';
+    int digito_grupo  = modo[1] - '0';
+    int digito_outros = modo[2] - '0';
+
+    int permissoes = (digito_dono   << POSICAO_DO_TRIO_DONO)
+                   | (digito_grupo  << POSICAO_DO_TRIO_GRUPO)
+                   | (digito_outros << POSICAO_DO_TRIO_OUTROS);
+    return permissoes;
+}
+
+/* chmod <modo> <caminho> : ex.: chmod 754 arquivo.txt */
+void comando_chmod(const char *modo, const char *caminho)
+{
+    if (!modo_e_valido(modo)) {
+        printf("chmod: modo inválido '%s' (use 3 dígitos de 0 a 7, ex.: 754)\n", modo);
+        return;
+    }
+
+    NoArvore *no = encontrar_pelo_caminho(caminho);
+    if (no == NULL) {
+        printf("chmod: '%s': não encontrado\n", caminho);
+        return;
+    }
+
+    /* No Linux, só o DONO do arquivo (ou o root) pode mudar as permissões */
+    bool e_root = (usuario_atual.id_do_usuario == 0);
+    bool e_dono = (usuario_atual.id_do_usuario == no->fcb.id_do_dono);
+    if (!e_root && !e_dono) {
+        printf("chmod: '%s': operação não permitida (só o dono ou o root)\n", caminho);
+        return;
+    }
+
+    no->fcb.permissoes = converter_modo_para_permissoes(modo);
 }

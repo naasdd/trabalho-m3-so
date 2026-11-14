@@ -35,7 +35,7 @@ void iniciar_sistema_de_arquivos(void)
 }
 
 /* Libera um nó e, antes dele, todos os filhos (recursivamente). */
-static void liberar_no_e_todos_os_filhos(NoArvore *no)
+void liberar_no_e_todos_os_filhos(NoArvore *no)
 {
     if (no == NULL) {
         return;
@@ -110,6 +110,37 @@ void adicionar_filho(NoArvore *pasta, NoArvore *filho)
     filho->pai           = pasta;
     filho->proximo_irmao = pasta->primeiro_filho;
     pasta->primeiro_filho = filho;
+}
+
+
+/*
+ * Tira 'filho' da lista de filhos de 'pasta' (sem liberar a memória).
+ *
+ * Como a lista só anda "para frente", precisamos achar quem vem
+ * ANTES do filho e fazer ele pular o filho:
+ *
+ *   antes:   a -> filho -> c
+ *   depois:  a ----------> c
+ */
+void remover_filho_da_pasta(NoArvore *pasta, NoArvore *filho)
+{
+    /* Caso 1: o filho é o primeiro da lista */
+    if (pasta->primeiro_filho == filho) {
+        pasta->primeiro_filho = filho->proximo_irmao;
+    }
+    /* Caso 2: o filho está no meio ou no fim */
+    else {
+        NoArvore *anterior = pasta->primeiro_filho;
+        while (anterior != NULL && anterior->proximo_irmao != filho) {
+            anterior = anterior->proximo_irmao;
+        }
+        if (anterior != NULL) {
+            anterior->proximo_irmao = filho->proximo_irmao;
+        }
+    }
+
+    filho->pai = NULL;
+    filho->proximo_irmao = NULL;
 }
 
 
@@ -192,6 +223,72 @@ NoArvore *encontrar_pelo_caminho(const char *caminho)
     }
 
     return posicao;
+}
+
+/*
+ * Separa um caminho em "pasta onde fica" + "nome do item".
+ * Serve para criar coisas em caminhos que AINDA NÃO existem.
+ *
+ *   "a.txt"            -> pasta atual,  nome "a.txt"
+ *   "docs/a.txt"       -> pasta "docs", nome "a.txt"
+ *   "/home/alice/a.txt"-> pasta "/home/alice", nome "a.txt"
+ *
+ * Retorna false se a pasta não existir ou não for um diretório.
+ */
+bool separar_pasta_e_nome(const char *caminho, NoArvore **pasta_encontrada, char *nome_encontrado)
+{
+    /* strrchr acha a ÚLTIMA "/" do caminho */
+    const char *ultima_barra = strrchr(caminho, '/');
+
+    NoArvore *pasta;
+
+    if (ultima_barra == NULL) {
+        /* Não tem "/": é só um nome, dentro da pasta atual */
+        pasta = diretorio_atual;
+        strncpy(nome_encontrado, caminho, TAMANHO_MAXIMO_NOME - 1);
+    } else if (ultima_barra == caminho) {
+        /* A única "/" é a do começo: ex. "/a.txt", fica na raiz */
+        pasta = raiz;
+        strncpy(nome_encontrado, ultima_barra + 1, TAMANHO_MAXIMO_NOME - 1);
+    } else {
+        /* Copia tudo ANTES da última "/" para achar a pasta */
+        char caminho_da_pasta[TAMANHO_MAXIMO_CAMINHO];
+        size_t tamanho_do_trecho = (size_t)(ultima_barra - caminho);
+        if (tamanho_do_trecho >= TAMANHO_MAXIMO_CAMINHO) {
+            return false;
+        }
+        memcpy(caminho_da_pasta, caminho, tamanho_do_trecho);
+        caminho_da_pasta[tamanho_do_trecho] = '\0';
+
+        pasta = encontrar_pelo_caminho(caminho_da_pasta);
+        strncpy(nome_encontrado, ultima_barra + 1, TAMANHO_MAXIMO_NOME - 1);
+    }
+    nome_encontrado[TAMANHO_MAXIMO_NOME - 1] = '\0';
+
+    if (pasta == NULL || !e_diretorio(pasta)) {
+        return false;
+    }
+    *pasta_encontrada = pasta;
+    return true;
+}
+
+/*
+ * Responde: 'possivel_descendente' está dentro de 'pasta' (em qualquer nível)?
+ * Usado para impedir absurdos como mover uma pasta para dentro dela mesma.
+ */
+bool esta_dentro_de(NoArvore *possivel_descendente, NoArvore *pasta)
+{
+    NoArvore *atual = possivel_descendente;
+    while (atual != NULL) {
+        if (atual == pasta) {
+            return true;
+        }
+        if (atual == raiz) {
+            return false;   /* chegou no topo sem encontrar */
+        }
+        atual = atual->pai;
+    }
+    return false;
 }
 
 /*

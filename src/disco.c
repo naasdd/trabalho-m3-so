@@ -78,24 +78,125 @@ void liberar_todos_os_blocos_do_arquivo(FCB *fcb)
 }
 
 
-/* TODO (3.4): quebrar o conteúdo em pedaços de 64 bytes,
- * reservar um bloco para cada pedaço e anotar os números no FCB. */
-bool gravar_conteudo_no_disco(FCB *fcb, const char *conteudo, size_t tamanho)
+/* Conta quantos blocos ainda estão livres no disco. */
+int contar_blocos_livres(void)
 {
-    (void)fcb;
-    (void)conteudo;
-    (void)tamanho;
-    return false;
+    int livres = 0;
+    for (int numero_do_bloco = 0; numero_do_bloco < QUANTIDADE_DE_BLOCOS_NO_DISCO; numero_do_bloco++) {
+        if (!bloco_esta_ocupado[numero_do_bloco]) {
+            livres = livres + 1;
+        }
+    }
+    return livres;
 }
 
 
-/* TODO (3.4): percorrer os blocos do FCB e juntar o conteúdo em 'destino'. */
+/* Quantos blocos são necessários para guardar 'tamanho' bytes?
+ * É uma divisão arredondando para CIMA: 150 bytes / 64 = 2,3 -> 3 blocos. */
+static int calcular_blocos_necessarios(size_t tamanho)
+{
+    int blocos_cheios = (int)(tamanho / TAMANHO_DO_BLOCO);
+    int sobrou_um_pedaco = (tamanho % TAMANHO_DO_BLOCO) != 0;
+
+    if (sobrou_um_pedaco) {
+        return blocos_cheios + 1;
+    }
+    return blocos_cheios;
+}
+
+
+/*
+ * Grava o conteúdo de um arquivo no disco (ALOCAÇÃO INDEXADA).
+ *
+ * Passo a passo:
+ *   1. calcula quantos blocos vai precisar
+ *   2. confere se cabe (limite por arquivo e espaço livre no disco)
+ *   3. devolve os blocos antigos do arquivo (se ele já tinha conteúdo)
+ *   4. para cada pedaço de 64 bytes: reserva um bloco livre,
+ *      copia o pedaço para lá e anota o número do bloco no FCB
+ *
+ * Exemplo com 150 bytes:
+ *   pedaço 1: bytes   0 a  63  -> bloco 4
+ *   pedaço 2: bytes  64 a 127  -> bloco 9
+ *   pedaço 3: bytes 128 a 149  -> bloco 10   (só 22 bytes usados)
+ *   FCB.blocos_do_arquivo = {4, 9, 10}
+ */
+ResultadoDaGravacao gravar_conteudo_no_disco(FCB *fcb, const char *conteudo, size_t tamanho)
+{
+    /* Passo 1 */
+    int blocos_necessarios = calcular_blocos_necessarios(tamanho);
+
+    /* Passo 2: os blocos que o arquivo já tem também contam como
+     * "disponíveis", porque vão ser devolvidos no passo 3. */
+    if (blocos_necessarios > MAXIMO_DE_BLOCOS_POR_ARQUIVO) {
+        return ERRO_ARQUIVO_GRANDE_DEMAIS;
+    }
+    int blocos_disponiveis = contar_blocos_livres() + fcb->quantidade_de_blocos;
+    if (blocos_necessarios > blocos_disponiveis) {
+        return ERRO_DISCO_CHEIO;
+    }
+
+    /* Passo 3 */
+    liberar_todos_os_blocos_do_arquivo(fcb);
+
+    /* Passo 4 */
+    size_t bytes_ja_gravados = 0;
+    for (int i = 0; i < blocos_necessarios; i++) {
+        int numero_do_bloco = reservar_bloco_livre();
+
+        /* O último pedaço pode ser menor que um bloco inteiro */
+        size_t bytes_que_faltam = tamanho - bytes_ja_gravados;
+        size_t bytes_deste_pedaco = TAMANHO_DO_BLOCO;
+        if (bytes_que_faltam < TAMANHO_DO_BLOCO) {
+            bytes_deste_pedaco = bytes_que_faltam;
+        }
+
+        char *inicio_do_bloco = &disco[numero_do_bloco * TAMANHO_DO_BLOCO];
+        memcpy(inicio_do_bloco, conteudo + bytes_ja_gravados, bytes_deste_pedaco);
+
+        fcb->blocos_do_arquivo[i] = numero_do_bloco;
+        bytes_ja_gravados = bytes_ja_gravados + bytes_deste_pedaco;
+    }
+
+    fcb->quantidade_de_blocos = blocos_necessarios;
+    fcb->tamanho_em_bytes = tamanho;
+    return GRAVOU_COM_SUCESSO;
+}
+
+
+/*
+ * Lê o conteúdo de um arquivo: o caminho inverso da gravação.
+ * Percorre a lista de blocos do FCB, na ordem, e junta os pedaços.
+ *
+ * Coloca um '\0' no final para o resultado poder ser usado como texto.
+ * Retorna quantos bytes foram lidos.
+ */
 size_t ler_conteudo_do_disco(const FCB *fcb, char *destino, size_t tamanho_destino)
 {
-    (void)fcb;
-    (void)destino;
-    (void)tamanho_destino;
-    return 0;
+    size_t bytes_ja_lidos = 0;
+
+    for (int i = 0; i < fcb->quantidade_de_blocos; i++) {
+        int numero_do_bloco = fcb->blocos_do_arquivo[i];
+
+        size_t bytes_que_faltam = fcb->tamanho_em_bytes - bytes_ja_lidos;
+        size_t bytes_deste_pedaco = TAMANHO_DO_BLOCO;
+        if (bytes_que_faltam < TAMANHO_DO_BLOCO) {
+            bytes_deste_pedaco = bytes_que_faltam;
+        }
+
+        /* Proteção: nunca escrever além do espaço que o destino tem
+         * (o -1 guarda lugar para o '\0' do final) */
+        if (bytes_ja_lidos + bytes_deste_pedaco > tamanho_destino - 1) {
+            break;
+        }
+
+        char *inicio_do_bloco = &disco[numero_do_bloco * TAMANHO_DO_BLOCO];
+        memcpy(destino + bytes_ja_lidos, inicio_do_bloco, bytes_deste_pedaco);
+        bytes_ja_lidos = bytes_ja_lidos + bytes_deste_pedaco;
+    }
+
+    destino[bytes_ja_lidos] = '\0';
+    return bytes_ja_lidos;
 }
 
 

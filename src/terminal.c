@@ -7,9 +7,14 @@
  * Os nomes dos COMANDOS continuam em inglês (mkdir, ls, cd...) porque
  * a ideia é imitar o terminal do Linux.
  */
+
+/* Necessário para usar isatty() e fileno() compilando com -std=c11 */
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "sistema_arquivos.h"
 
@@ -49,6 +54,7 @@ static void comando_help(void)
     printf("  cd [caminho]             entra numa pasta (sem caminho volta para /)\n");
     printf("  ls [-l] [caminho]        lista o conteúdo (-l mostra detalhes)\n");
     printf("  pwd                      mostra onde você está\n");
+    printf("  rmdir <pasta>            apaga uma pasta vazia\n");
     printf("  touch <arquivo>          cria um arquivo vazio\n");
     printf("  echo <texto> > <arquivo> escreve no arquivo (>> adiciona no final)\n");
     printf("  cat <arquivo>            mostra o conteúdo\n");
@@ -56,6 +62,7 @@ static void comando_help(void)
     printf("  mv <origem> <destino>    move ou renomeia\n");
     printf("  rm <arquivo>             apaga\n");
     printf("  stat <arquivo>           mostra o FCB (inode) do arquivo\n");
+    printf("  ./<arquivo>              executa o arquivo (testa a permissão x)\n");
     printf("  chmod <modo> <arquivo>   muda permissões (ex.: chmod 754 a.txt)\n");
     printf("  disk                     mostra o mapa de blocos do disco\n");
     printf("  whoami                   mostra o usuário atual\n");
@@ -208,6 +215,11 @@ static bool executar_linha(char *linha)
         linha++;
     }
 
+    /* Linha começando com "#" é comentário (usado nos roteiros de teste) */
+    if (linha[0] == '#') {
+        return true;
+    }
+
     /* O echo precisa da linha inteira (com espaços), então tratamos antes */
     bool comeca_com_echo_espaco = (strncmp(linha, "echo ", 5) == 0);
     if (comeca_com_echo_espaco) {
@@ -228,6 +240,13 @@ static bool executar_linha(char *linha)
     }
 
     const char *comando = palavras[0];
+
+    /* "./script.sh" : executar um arquivo (igual ao Linux) */
+    bool comeca_com_ponto_barra = (strncmp(comando, "./", 2) == 0);
+    if (comeca_com_ponto_barra) {
+        comando_executar(comando + 2);
+        return true;
+    }
 
     if (strcmp(comando, "exit") == 0) {
         return false;
@@ -257,6 +276,11 @@ static bool executar_linha(char *linha)
     else if (strcmp(comando, "mkdir") == 0) {
         if (tem_argumentos_suficientes(quantidade_palavras, 1, "mkdir <nome>")) {
             comando_mkdir(palavras[1]);
+        }
+    }
+    else if (strcmp(comando, "rmdir") == 0) {
+        if (tem_argumentos_suficientes(quantidade_palavras, 1, "rmdir <pasta>")) {
+            comando_rmdir(palavras[1]);
         }
     }
     else if (strcmp(comando, "touch") == 0) {
@@ -335,6 +359,14 @@ void rodar_terminal(void)
 
     printf("Mini sistema de arquivos em memória. Digite 'help' para ver os comandos.\n");
 
+    /*
+     * Os comandos podem vir do teclado ou de um arquivo:
+     *     ./minifs < demo/roteiro_apresentacao.txt
+     * Quando vêm de um arquivo, mostramos cada comando depois do prompt,
+     * para a saída ficar igual a alguém digitando.
+     */
+    bool entrada_e_o_teclado = isatty(fileno(stdin));
+
     while (true) {
         mostrar_prompt();
 
@@ -342,6 +374,14 @@ void rodar_terminal(void)
         if (fgets(linha, sizeof(linha), stdin) == NULL) {
             printf("\n");
             break;
+        }
+
+        if (!entrada_e_o_teclado) {
+            printf("%s", linha);
+            bool linha_sem_quebra_no_fim = (strchr(linha, '\n') == NULL);
+            if (linha_sem_quebra_no_fim) {
+                printf("\n");
+            }
         }
 
         bool continuar = executar_linha(linha);

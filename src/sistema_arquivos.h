@@ -175,7 +175,7 @@ void      liberar_no_e_todos_os_filhos(NoArvore *no);
 bool      esta_dentro_de(NoArvore *possivel_descendente, NoArvore *pasta);
 
 /* ---------- comandos_diretorio.c : 3.1 ---------- */
-void comando_mkdir(const char *nome);
+void comando_mkdir(const char *caminho);
 void comando_cd(const char *caminho);
 void comando_ls(const char *caminho, bool formato_detalhado);
 void comando_pwd(void);

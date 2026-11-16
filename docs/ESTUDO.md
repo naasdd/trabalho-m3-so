@@ -180,6 +180,8 @@ A matéria diz que as operações básicas com arquivos são **criar, escrever, 
 | **Excluir** | `rm a.txt` | a ficha sai da pasta, os blocos voltam a ficar livres e a memória é liberada |
 | **Truncar** | `echo novo > a.txt` (arquivo que já existia) | o conteúdo antigo é jogado fora e o arquivo recomeça só com o novo |
 
+> **Sinceridade sobre o "reposicionar":** no Linux de verdade, reposicionar é o `lseek`, que move um "cursor" para o meio do arquivo aberto. Nosso programa não tem "abrir arquivo" com cursor: cada comando lê ou grava o arquivo inteiro. O `>>` é o mais perto disso, porque a escrita começa no fim. Se o professor perguntar, responda exatamente isso. Admitir a limitação e explicar o motivo vale mais do que forçar.
+
 Também fizemos operações compostas:
 - **`cp`** (copiar) = ler + criar + escrever.
 - **`mv`** (mover/renomear).
@@ -915,6 +917,7 @@ caminho_da_pasta[tamanho_do_trecho] = '\0';
 
 - **`ultima_barra - caminho`**: subtrair dois ponteiros do mesmo texto dá a **distância** entre eles, ou seja, quantos caracteres existem antes da barra. Isso se chama aritmética de ponteiros.
 - `memcpy` copia exatamente esse trecho, e o `'\0'` termina o texto.
+- **Nome comprido demais (32 caracteres ou mais):** a função **não corta** o nome escondido. Se cortasse, você digitaria `touch nomegigante...` e nasceria um arquivo com outro nome, sem aviso. Em vez disso, ela devolve um nome vazio (`nome_encontrado[0] = '\0'`), e quem chamou recusa com "nome inválido".
 - A função devolve a pasta "por fora", usando um **ponteiro para ponteiro** (`NoArvore **pasta_encontrada`). **Por que `**`?** Uma função em C só devolve um valor com `return`, e o nosso `return` já é usado para dizer se deu certo (`true`/`false`). Para devolver também a pasta, quem chama passa o **endereço** da sua variável (`&pasta`), e a função escreve nesse endereço com `*pasta_encontrada = pasta`.
 
 ### 19.8 `esta_dentro_de`
@@ -1309,7 +1312,7 @@ Só confere a permissão de **execução** (`x`) e, se tiver, mostra o conteúdo
 
 - **`comando_cd`** exige permissão `x` na pasta de destino (`PERMISSAO_DE_EXECUCAO`). No Linux, `x` em pasta significa "poder entrar".
 - **`comando_ls`** exige `r` na pasta. Se você der `ls` num arquivo, ele mostra só aquele arquivo, igual ao Linux.
-- **`comando_mkdir`** exige `w` na pasta atual e confere se o nome é válido e se não existe.
+- **`comando_mkdir`** aceita nome simples ou caminho (`/home/alice`): usa `separar_pasta_e_nome` para descobrir a pasta de cima, confere se o nome é válido e se não existe, e exige `w` nessa pasta de cima.
 - **`comando_rmdir`** confere quatro coisas antes de apagar: existe? é pasta? não é a raiz nem a pasta atual (ou uma acima dela)? está vazia? E ainda exige `w` na pasta de cima.
 - **`imprimir_linha_detalhada`** (o `ls -l`) usa `localtime` (transforma o `time_t` em dia, mês, hora...) e `strftime` (formata como texto, `"%d/%m %H:%M"` → `14/11 20:36`). O `%zu` no `printf` é o formato certo para `size_t`.
 

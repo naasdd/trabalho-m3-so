@@ -50,7 +50,7 @@ Usuario usuario_atual = { 0, 0, "root" };
 static void comando_help(void)
 {
     printf("Comandos disponíveis:\n");
-    printf("  mkdir <nome>             cria uma pasta\n");
+    printf("  mkdir <caminho>          cria uma pasta\n");
     printf("  cd [caminho]             entra numa pasta (sem caminho volta para /)\n");
     printf("  ls [-l] [caminho]        lista o conteúdo (-l mostra detalhes)\n");
     printf("  pwd                      mostra onde você está\n");
@@ -274,7 +274,7 @@ static bool executar_linha(char *linha)
         }
     }
     else if (strcmp(comando, "mkdir") == 0) {
-        if (tem_argumentos_suficientes(quantidade_palavras, 1, "mkdir <nome>")) {
+        if (tem_argumentos_suficientes(quantidade_palavras, 1, "mkdir <caminho>")) {
             comando_mkdir(palavras[1]);
         }
     }

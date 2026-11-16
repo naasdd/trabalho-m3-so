@@ -130,7 +130,7 @@ static NoArvore *criar_arquivo_vazio(const char *nome_do_comando, const char *ca
         return NULL;
     }
     if (!nome_e_valido(nome)) {
-        printf("%s: nome inválido: '%s'\n", nome_do_comando, nome);
+        printf("%s: nome inválido: '%s'\n", nome_do_comando, caminho);
         return NULL;
     }
     if (procurar_filho_pelo_nome(pasta, nome) != NULL) {
@@ -408,7 +408,7 @@ void comando_cp(const char *origem, const char *destino)
         }
     } else {
         if (!nome_e_valido(nome_destino)) {
-            printf("cp: nome inválido: '%s'\n", nome_destino);
+            printf("cp: nome inválido: '%s'\n", destino);
             return;
         }
         if (!usuario_tem_permissao(&pasta_destino->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
@@ -474,7 +474,7 @@ void comando_mv(const char *origem, const char *destino)
         return;
     }
     if (!nome_e_valido(nome_destino)) {
-        printf("mv: nome inválido: '%s'\n", nome_destino);
+        printf("mv: nome inválido: '%s'\n", destino);
         return;
     }
 

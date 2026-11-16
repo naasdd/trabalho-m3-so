@@ -10,28 +10,40 @@
 #include "sistema_arquivos.h"
 
 
-/* mkdir <nome> : cria uma pasta dentro da pasta atual */
-void comando_mkdir(const char *nome)
+/* mkdir <caminho> : cria uma pasta (na pasta atual ou no caminho indicado) */
+void comando_mkdir(const char *caminho)
 {
+    /*
+     * Aceita nome simples ("docs") ou caminho ("/home/alice", "a/b").
+     * separar_pasta_e_nome diz em qual pasta criar e com qual nome.
+     */
+    NoArvore *pasta;
+    char nome[TAMANHO_MAXIMO_NOME];
+
+    if (!separar_pasta_e_nome(caminho, &pasta, nome)) {
+        printf("mkdir: '%s': a pasta não existe\n", caminho);
+        return;
+    }
+
     if (!nome_e_valido(nome)) {
-        printf("mkdir: nome inválido: '%s'\n", nome);
+        printf("mkdir: nome inválido: '%s'\n", caminho);
+        return;
+    }
+
+    if (procurar_filho_pelo_nome(pasta, nome) != NULL) {
+        printf("mkdir: '%s' já existe\n", caminho);
         return;
     }
 
     /* Para criar algo dentro de uma pasta, precisa poder ESCREVER nela */
-    if (!usuario_tem_permissao(&diretorio_atual->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
+    if (!usuario_tem_permissao(&pasta->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
         printf("mkdir: permissão negada\n");
         return;
     }
 
-    if (procurar_filho_pelo_nome(diretorio_atual, nome) != NULL) {
-        printf("mkdir: '%s' já existe\n", nome);
-        return;
-    }
-
     NoArvore *nova_pasta = criar_no(nome, TIPO_DIRETORIO);
-    adicionar_filho(diretorio_atual, nova_pasta);
-    diretorio_atual->fcb.data_de_modificacao = time(NULL);
+    adicionar_filho(pasta, nova_pasta);
+    pasta->fcb.data_de_modificacao = time(NULL);
 }
 
 

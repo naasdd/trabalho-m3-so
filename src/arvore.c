@@ -240,16 +240,17 @@ bool separar_pasta_e_nome(const char *caminho, NoArvore **pasta_encontrada, char
     /* strrchr acha a ÚLTIMA "/" do caminho */
     const char *ultima_barra = strrchr(caminho, '/');
 
-    NoArvore *pasta;
+    NoArvore   *pasta;
+    const char *trecho_do_nome;   /* aponta para onde o nome começa dentro do caminho */
 
     if (ultima_barra == NULL) {
         /* Não tem "/": é só um nome, dentro da pasta atual */
         pasta = diretorio_atual;
-        strncpy(nome_encontrado, caminho, TAMANHO_MAXIMO_NOME - 1);
+        trecho_do_nome = caminho;
     } else if (ultima_barra == caminho) {
         /* A única "/" é a do começo: ex. "/a.txt", fica na raiz */
         pasta = raiz;
-        strncpy(nome_encontrado, ultima_barra + 1, TAMANHO_MAXIMO_NOME - 1);
+        trecho_do_nome = ultima_barra + 1;
     } else {
         /* Copia tudo ANTES da última "/" para achar a pasta */
         char caminho_da_pasta[TAMANHO_MAXIMO_CAMINHO];
@@ -261,9 +262,19 @@ bool separar_pasta_e_nome(const char *caminho, NoArvore **pasta_encontrada, char
         caminho_da_pasta[tamanho_do_trecho] = '\0';
 
         pasta = encontrar_pelo_caminho(caminho_da_pasta);
-        strncpy(nome_encontrado, ultima_barra + 1, TAMANHO_MAXIMO_NOME - 1);
+        trecho_do_nome = ultima_barra + 1;
     }
-    nome_encontrado[TAMANHO_MAXIMO_NOME - 1] = '\0';
+
+    /*
+     * Nome comprido demais: NÃO cortamos escondido (o usuário ia criar
+     * um arquivo com nome diferente do que digitou). Devolvemos um nome
+     * vazio, e quem chamou vai recusar com "nome inválido".
+     */
+    if (strlen(trecho_do_nome) >= TAMANHO_MAXIMO_NOME) {
+        nome_encontrado[0] = '\0';
+    } else {
+        strcpy(nome_encontrado, trecho_do_nome);
+    }
 
     if (pasta == NULL || !e_diretorio(pasta)) {
         return false;

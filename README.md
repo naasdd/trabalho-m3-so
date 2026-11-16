@@ -49,7 +49,7 @@ Também dá para rodar uma sequência de comandos pronta, sem digitar:
 
 | Comando | O que faz | Objetivo do enunciado |
 |---------|-----------|-----------------------|
-| `mkdir <nome>` | cria uma pasta | 3.1 |
+| `mkdir <caminho>` | cria uma pasta (aceita `docs`, `a/b` ou `/home/alice`) | 3.1 |
 | `cd [caminho]` | entra numa pasta (sem caminho volta para `/`) | 3.1 |
 | `ls [-l] [caminho]` | lista o conteúdo (`-l` mostra permissões, dono, tamanho, data) | 3.1 |
 | `pwd` | mostra a pasta atual | 3.1 |

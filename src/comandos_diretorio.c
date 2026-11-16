@@ -42,6 +42,10 @@ void comando_mkdir(const char *caminho)
     }
 
     NoArvore *nova_pasta = criar_no(nome, TIPO_DIRETORIO);
+    if (nova_pasta == NULL) {
+        printf("mkdir: limite de %d arquivos e pastas atingido\n", MAXIMO_DE_NOS);
+        return;
+    }
     adicionar_filho(pasta, nova_pasta);
     pasta->fcb.data_de_modificacao = time(NULL);
 }
@@ -140,18 +144,21 @@ void comando_ls(const char *caminho, bool formato_detalhado)
         return;
     }
 
-    NoArvore *filho = alvo->primeiro_filho;
-    while (filho != NULL) {
-        if (formato_detalhado) {
-            imprimir_linha_detalhada(filho);
-        } else {
-            imprimir_nome(filho);
+    /* Percorre o vetor de nós mostrando quem é filho desta pasta */
+    for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+        NoArvore *no = &tabela_de_nos[i];
+        if (!e_filho_de(no, alvo)) {
+            continue;
         }
-        filho = filho->proximo_irmao;
+        if (formato_detalhado) {
+            imprimir_linha_detalhada(no);
+        } else {
+            imprimir_nome(no);
+        }
     }
 
     /* No formato simples, os nomes ficam na mesma linha; pulamos linha no fim */
-    bool pasta_tem_algo = (alvo->primeiro_filho != NULL);
+    bool pasta_tem_algo = !pasta_esta_vazia(alvo);
     if (!formato_detalhado && pasta_tem_algo) {
         printf("\n");
     }
@@ -178,20 +185,19 @@ void comando_rmdir(const char *caminho)
         printf("rmdir: '%s': não é possível remover a pasta atual ou uma acima dela\n", caminho);
         return;
     }
-    if (pasta->primeiro_filho != NULL) {
+    if (!pasta_esta_vazia(pasta)) {
         printf("rmdir: '%s': a pasta não está vazia\n", caminho);
         return;
     }
 
-    NoArvore *pasta_de_cima = pasta->pai;
-    if (!usuario_tem_permissao(&pasta_de_cima->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
+    NoArvore *pasta_mae = pasta_de_cima(pasta);
+    if (!usuario_tem_permissao(&pasta_mae->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
         printf("rmdir: '%s': permissão negada\n", caminho);
         return;
     }
 
-    remover_filho_da_pasta(pasta_de_cima, pasta);
-    liberar_no_e_todos_os_filhos(pasta);
-    pasta_de_cima->fcb.data_de_modificacao = time(NULL);
+    liberar_no_e_todos_os_filhos(pasta);   /* libera a posição no vetor */
+    pasta_mae->fcb.data_de_modificacao = time(NULL);
 }
 
 

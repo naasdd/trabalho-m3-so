@@ -3,6 +3,10 @@
  *
  * Funções que montam e percorrem a árvore de diretórios.
  * Aqui NÃO tem nenhum comando do terminal, só a estrutura em si.
+ *
+ * A árvore é guardada num ARRAY DE STRUCTS (tabela_de_nos): cada
+ * posição é um arquivo ou pasta, e cada nó anota o índice da sua
+ * pasta-mãe. Ver o desenho em sistema_arquivos.h.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,8 +15,17 @@
 #include "sistema_arquivos.h"
 
 
+/*
+ * A TABELA DE NÓS: um array de structs com MAXIMO_DE_NOS posições.
+ * Todo arquivo e toda pasta do sistema mora numa posição deste vetor.
+ * Ela é alocada uma única vez (calloc) no começo e liberada (free) no fim.
+ */
+NoArvore *tabela_de_nos   = NULL;
 NoArvore *raiz            = NULL;
 NoArvore *diretorio_atual = NULL;
+
+/* A raiz sempre ocupa a primeira posição do vetor. */
+#define INDICE_DA_RAIZ 0
 
 /* Contador para dar um número de inode diferente para cada arquivo novo. */
 static int proximo_numero_inode = 1;
@@ -26,39 +39,111 @@ void iniciar_sistema_de_arquivos(void)
 {
     iniciar_disco();
 
+    /* calloc zera o vetor inteiro: todas as posições começam com em_uso = false */
+    tabela_de_nos = calloc(MAXIMO_DE_NOS, sizeof(NoArvore));
+    if (tabela_de_nos == NULL) {
+        printf("Erro fatal: acabou a memória do computador.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* O primeiro nó criado cai na posição 0: essa é a raiz */
     raiz = criar_no("/", TIPO_DIRETORIO);
 
     /* O "pai" da raiz é a própria raiz. Assim "cd .." em "/" continua em "/". */
-    raiz->pai = raiz;
+    raiz->indice_do_pai = INDICE_DA_RAIZ;
 
     diretorio_atual = raiz;
 }
 
-/* Libera um nó e, antes dele, todos os filhos (recursivamente). */
+/*
+ * Apaga um nó e, antes dele, todos os filhos (recursivamente).
+ * "Apagar" aqui = devolver os blocos do disco e marcar a posição
+ * do vetor como livre, para ser reaproveitada por outro arquivo.
+ */
 void liberar_no_e_todos_os_filhos(NoArvore *no)
 {
-    if (no == NULL) {
+    if (no == NULL || !no->em_uso) {
         return;
     }
 
-    NoArvore *filho = no->primeiro_filho;
-    while (filho != NULL) {
-        /* Guardamos o próximo ANTES de liberar o filho atual,
-         * porque depois do free() não podemos mais ler filho->proximo_irmao. */
-        NoArvore *proximo = filho->proximo_irmao;
-        liberar_no_e_todos_os_filhos(filho);
-        filho = proximo;
+    /* Procura no vetor todos os nós que são filhos deste */
+    for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+        if (e_filho_de(&tabela_de_nos[i], no)) {
+            liberar_no_e_todos_os_filhos(&tabela_de_nos[i]);
+        }
     }
 
     liberar_todos_os_blocos_do_arquivo(&no->fcb);
-    free(no);
+
+    /* Zera a posição inteira: em_uso volta a ser false */
+    memset(no, 0, sizeof(NoArvore));
 }
 
 void encerrar_sistema_de_arquivos(void)
 {
     liberar_no_e_todos_os_filhos(raiz);
-    raiz = NULL;
+
+    /* Um único free para o único calloc do vetor */
+    free(tabela_de_nos);
+    tabela_de_nos   = NULL;
+    raiz            = NULL;
     diretorio_atual = NULL;
+}
+
+
+/* ---------------------------------------------------------------------
+ * Funções básicas do vetor
+ * --------------------------------------------------------------------- */
+
+/*
+ * Em qual posição do vetor este nó está?
+ * Subtrair dois ponteiros do mesmo vetor dá a distância entre eles
+ * (em quantidade de elementos), que é justamente o índice.
+ */
+int indice_do_no(NoArvore *no)
+{
+    return (int)(no - tabela_de_nos);
+}
+
+/* Devolve a pasta onde o nó está (a "pasta de cima"). */
+NoArvore *pasta_de_cima(NoArvore *no)
+{
+    return &tabela_de_nos[no->indice_do_pai];
+}
+
+/* Responde: 'no' é um filho direto de 'pasta'? */
+bool e_filho_de(NoArvore *no, NoArvore *pasta)
+{
+    if (!no->em_uso) {
+        return false;            /* posição livre não é filho de ninguém */
+    }
+    if (no == pasta) {
+        return false;            /* a raiz é "pai de si mesma", mas não é filha */
+    }
+    return no->indice_do_pai == indice_do_no(pasta);
+}
+
+/* Uma pasta está vazia se nenhum nó do vetor aponta para ela como pai. */
+bool pasta_esta_vazia(NoArvore *pasta)
+{
+    for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+        if (e_filho_de(&tabela_de_nos[i], pasta)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Quantas posições do vetor estão ocupadas (usado pelo comando disk). */
+int contar_nos_em_uso(void)
+{
+    int quantidade = 0;
+    for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+        if (tabela_de_nos[i].em_uso) {
+            quantidade = quantidade + 1;
+        }
+    }
+    return quantidade;
 }
 
 
@@ -66,15 +151,28 @@ void encerrar_sistema_de_arquivos(void)
  * Criação de nós
  * --------------------------------------------------------------------- */
 
-/* Cria um nó novo (arquivo ou pasta) com o FCB preenchido. */
+/*
+ * Cria um nó novo (arquivo ou pasta) com o FCB preenchido.
+ *
+ * Procura a PRIMEIRA posição livre do vetor e usa ela.
+ * Retorna NULL se o vetor estiver cheio (MAXIMO_DE_NOS itens).
+ */
 NoArvore *criar_no(const char *nome, TipoArquivo tipo)
 {
-    /* calloc já zera toda a memória, então todos os ponteiros começam NULL */
-    NoArvore *novo = calloc(1, sizeof(NoArvore));
-    if (novo == NULL) {
-        printf("Erro fatal: acabou a memória do computador.\n");
-        exit(EXIT_FAILURE);
+    NoArvore *novo = NULL;
+    for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+        if (!tabela_de_nos[i].em_uso) {
+            novo = &tabela_de_nos[i];
+            break;
+        }
     }
+    if (novo == NULL) {
+        return NULL;   /* não sobrou nenhuma posição livre */
+    }
+
+    /* Começa do zero, para não sobrar lixo de um arquivo apagado antes */
+    memset(novo, 0, sizeof(NoArvore));
+    novo->em_uso = true;
 
     time_t agora = time(NULL);
 
@@ -104,43 +202,14 @@ NoArvore *criar_no(const char *nome, TipoArquivo tipo)
     return novo;
 }
 
-/* Coloca 'filho' dentro de 'pasta' (no começo da lista de filhos). */
+/*
+ * Coloca 'filho' dentro de 'pasta'.
+ * Basta anotar no filho o índice da pasta. Isso serve tanto para um nó
+ * recém-criado quanto para MOVER um nó que já estava em outra pasta (mv).
+ */
 void adicionar_filho(NoArvore *pasta, NoArvore *filho)
 {
-    filho->pai           = pasta;
-    filho->proximo_irmao = pasta->primeiro_filho;
-    pasta->primeiro_filho = filho;
-}
-
-
-/*
- * Tira 'filho' da lista de filhos de 'pasta' (sem liberar a memória).
- *
- * Como a lista só anda "para frente", precisamos achar quem vem
- * ANTES do filho e fazer ele pular o filho:
- *
- *   antes:   a -> filho -> c
- *   depois:  a ----------> c
- */
-void remover_filho_da_pasta(NoArvore *pasta, NoArvore *filho)
-{
-    /* Caso 1: o filho é o primeiro da lista */
-    if (pasta->primeiro_filho == filho) {
-        pasta->primeiro_filho = filho->proximo_irmao;
-    }
-    /* Caso 2: o filho está no meio ou no fim */
-    else {
-        NoArvore *anterior = pasta->primeiro_filho;
-        while (anterior != NULL && anterior->proximo_irmao != filho) {
-            anterior = anterior->proximo_irmao;
-        }
-        if (anterior != NULL) {
-            anterior->proximo_irmao = filho->proximo_irmao;
-        }
-    }
-
-    filho->pai = NULL;
-    filho->proximo_irmao = NULL;
+    filho->indice_do_pai = indice_do_no(pasta);
 }
 
 
@@ -167,16 +236,15 @@ NoArvore *procurar_filho_pelo_nome(NoArvore *pasta, const char *nome)
 
     /* ".." significa "a pasta de cima" */
     if (strcmp(nome, "..") == 0) {
-        return pasta->pai;
+        return pasta_de_cima(pasta);
     }
 
-    /* Percorre a lista de filhos um por um */
-    NoArvore *filho = pasta->primeiro_filho;
-    while (filho != NULL) {
-        if (strcmp(filho->fcb.nome, nome) == 0) {
-            return filho;
+    /* Percorre o vetor inteiro procurando um filho desta pasta com esse nome */
+    for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+        NoArvore *candidato = &tabela_de_nos[i];
+        if (e_filho_de(candidato, pasta) && strcmp(candidato->fcb.nome, nome) == 0) {
+            return candidato;
         }
-        filho = filho->proximo_irmao;
     }
 
     return NULL;
@@ -297,7 +365,7 @@ bool esta_dentro_de(NoArvore *possivel_descendente, NoArvore *pasta)
         if (atual == raiz) {
             return false;   /* chegou no topo sem encontrar */
         }
-        atual = atual->pai;
+        atual = pasta_de_cima(atual);
     }
     return false;
 }
@@ -323,7 +391,7 @@ void montar_caminho_completo(NoArvore *no, char *destino, size_t tamanho_destino
     while (atual != raiz && quantidade < TAMANHO_MAXIMO_CAMINHO) {
         nos_do_caminho[quantidade] = atual;
         quantidade = quantidade + 1;
-        atual = atual->pai;
+        atual = pasta_de_cima(atual);
     }
 
     /* Passo 2: escrever do mais alto (fim da lista) até o mais baixo */

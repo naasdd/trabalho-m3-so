@@ -144,6 +144,10 @@ static NoArvore *criar_arquivo_vazio(const char *nome_do_comando, const char *ca
     }
 
     NoArvore *novo_arquivo = criar_no(nome, TIPO_TEXTO);
+    if (novo_arquivo == NULL) {
+        printf("%s: limite de %d arquivos e pastas atingido\n", nome_do_comando, MAXIMO_DE_NOS);
+        return NULL;
+    }
     adicionar_filho(pasta, novo_arquivo);
     pasta->fcb.data_de_modificacao = time(NULL);
     return novo_arquivo;
@@ -304,14 +308,13 @@ void comando_rm(const char *caminho)
         return;
     }
 
-    NoArvore *pasta = arquivo->pai;
+    NoArvore *pasta = pasta_de_cima(arquivo);
     if (!usuario_tem_permissao(&pasta->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) {
         printf("rm: '%s': permissão negada\n", caminho);
         return;
     }
 
-    remover_filho_da_pasta(pasta, arquivo);
-    liberar_no_e_todos_os_filhos(arquivo);   /* devolve os blocos e libera a memória */
+    liberar_no_e_todos_os_filhos(arquivo);   /* devolve os blocos e libera a posição no vetor */
     pasta->fcb.data_de_modificacao = time(NULL);
 }
 
@@ -416,6 +419,10 @@ void comando_cp(const char *origem, const char *destino)
             return;
         }
         arquivo_destino = criar_no(nome_destino, arquivo_origem->fcb.tipo);
+        if (arquivo_destino == NULL) {
+            printf("cp: limite de %d arquivos e pastas atingido\n", MAXIMO_DE_NOS);
+            return;
+        }
         adicionar_filho(pasta_destino, arquivo_destino);
         criou_arquivo_novo = true;
     }
@@ -429,7 +436,6 @@ void comando_cp(const char *origem, const char *destino)
         mostrar_erro_de_gravacao("cp", resultado);
         /* Não deixamos um arquivo vazio "pela metade" para trás */
         if (criou_arquivo_novo) {
-            remover_filho_da_pasta(pasta_destino, arquivo_destino);
             liberar_no_e_todos_os_filhos(arquivo_destino);
         }
         return;
@@ -488,7 +494,7 @@ void comando_mv(const char *origem, const char *destino)
     }
 
     /* Precisa poder escrever nas DUAS pastas: tirar de uma e colocar na outra */
-    NoArvore *pasta_origem = item->pai;
+    NoArvore *pasta_origem = pasta_de_cima(item);
     bool pode_tirar   = usuario_tem_permissao(&pasta_origem->fcb,  &usuario_atual, PERMISSAO_DE_ESCRITA);
     bool pode_colocar = usuario_tem_permissao(&pasta_destino->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA);
     if (!pode_tirar || !pode_colocar) {
@@ -496,7 +502,7 @@ void comando_mv(const char *origem, const char *destino)
         return;
     }
 
-    remover_filho_da_pasta(pasta_origem, item);
+    /* Mover = só trocar o índice da pasta-mãe anotado no nó */
     strncpy(item->fcb.nome, nome_destino, TAMANHO_MAXIMO_NOME - 1);
     adicionar_filho(pasta_destino, item);
 

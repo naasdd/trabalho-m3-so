@@ -124,34 +124,54 @@ typedef struct {
 
 O FCB **não guarda o conteúdo** do arquivo. Ele guarda só a lista de **quais blocos do disco** têm o conteúdo, igual a um inode real.
 
-### 4.2 A árvore de diretórios: "primeiro filho / próximo irmão"
+### 4.2 A árvore de diretórios: um array de structs
 
-Uma pasta pode ter qualquer quantidade de filhos. Em vez de usar um vetor de tamanho fixo de filhos, cada nó tem só três ponteiros:
+O enunciado (item 3.1) deixa cada grupo escolher a estrutura de dados do diretório: árvore binária, lista encadeada ou **array de structs**. O nosso grupo escolheu o **array de structs**.
+
+Todos os arquivos e pastas ficam num único vetor, a **tabela de nós**, com `MAXIMO_DE_NOS` (128) posições. É parecido com a tabela de inodes que um disco Linux de verdade guarda. Cada posição é um `NoArvore`:
 
 ```c
-typedef struct NoArvore {
-    FCB              fcb;
-    struct NoArvore *pai;             /* para o "cd .." e para montar o caminho */
-    struct NoArvore *primeiro_filho;  /* início da lista de filhos */
-    struct NoArvore *proximo_irmao;   /* próximo item da mesma pasta */
+typedef struct {
+    bool  em_uso;          /* esta posição do vetor está ocupada? */
+    FCB   fcb;
+    int   indice_do_pai;   /* posição da pasta-mãe dentro do vetor */
 } NoArvore;
+
+NoArvore *tabela_de_nos;   /* calloc(MAXIMO_DE_NOS, sizeof(NoArvore)) */
 ```
 
+A árvore é montada só com números: cada nó anota o **índice da pasta onde está**.
+
 ```
-        /                         /  ──primeiro_filho──▶ home
-        │                                                 │
-       home                                        primeiro_filho
-      ┌─┴──┐                                              ▼
-   alice   bob                           alice ──proximo_irmao──▶ bob
+ índice:   0        1        2         3        4
+         +------+ +------+ +-------+ +------+ +------+
+ nome:   |  /   | | home | | alice | | bob  | |livre |
+ pai:    |  0   | |  0   | |   1   | |  1   | |  -   |
+         +------+ +------+ +-------+ +------+ +------+
+
+ desenha a árvore:   /
+                     └── home
+                         ├── alice
+                         └── bob
 ```
+
+Regras:
+- A raiz fica sempre no índice 0 e é **pai de si mesma**. Por isso `cd ..` em `/` continua em `/`.
+- Os filhos de uma pasta são **todos os nós cujo `indice_do_pai` é o índice dela**. `ls`, `rmdir` (pasta vazia?) e a busca por nome percorrem o vetor procurando esses nós.
+- **Criar** um arquivo = achar a primeira posição com `em_uso == false`, preencher o FCB e anotar o índice da pasta.
+- **Apagar** = devolver os blocos ao disco e zerar a posição, que volta a ficar livre e é reaproveitada.
+- **Mover** (`mv`) = só trocar o número `indice_do_pai`. Nada é copiado.
+- `cd ..` e `pwd` sobem a árvore seguindo `indice_do_pai` até chegar no índice 0.
 
 Vantagens dessa escolha:
-- **Sem limite** de arquivos por pasta: a lista cresce com `malloc` conforme a necessidade.
-- **Sem desperdício**: uma pasta vazia não reserva espaço para filhos.
-- Inserir é **O(1)**: o novo filho entra no começo da lista. Por isso o `ls` mostra primeiro o item mais recente.
-- Procurar um nome numa pasta é **O(n)**, sendo n o número de itens **daquela pasta**, e não do sistema inteiro.
+- **Simples**: não tem ponteiro entre nós para religar. Toda a estrutura é um vetor e um número por nó.
+- **Igual ao Linux**: o sistema real também guarda os inodes numa tabela de tamanho fixo, criada quando o disco é formatado. Por isso existe um número máximo de arquivos (no Linux, `df -i` mostra isso).
+- **Acesso direto**: com o índice, chegamos no nó em O(1) (`tabela_de_nos[i]`).
+- **Memória**: um único `calloc` no começo e um único `free` no fim. Não tem como esquecer um nó para trás.
 
-Os nós são criados com `calloc` (memória zerada, ponteiros começam em `NULL`) e liberados com `free` de forma recursiva.
+Desvantagens (e como lidamos):
+- **Limite fixo**: no máximo 128 arquivos + pastas. Ao passar disso aparece `limite de 128 arquivos e pastas atingido`. O comando `disk` mostra quantas posições estão em uso.
+- **Busca O(N)**: para listar uma pasta ou procurar um nome, percorremos o vetor inteiro (N = 128), não só os itens daquela pasta. Com 128 posições isso é instantâneo.
 
 ### 4.3 Permissões como bitmask
 
@@ -196,14 +216,14 @@ A teoria lista seis operações básicas. Todas existem no simulador e atualizam
 
 | Operação (teoria) | Comando | O que acontece por dentro |
 |-------------------|---------|---------------------------|
-| **Criar** | `touch`, `echo >` | aloca um `NoArvore` com `calloc`, preenche o FCB, liga na pasta |
+| **Criar** | `touch`, `echo >` | pega a primeira posição livre da tabela de nós, preenche o FCB, anota o índice da pasta |
 | **Escrever** | `echo >`, `echo >>` | corta o texto em blocos, grava no disco, atualiza tamanho e data de modificação |
 | **Ler** | `cat` | junta os blocos na ordem do FCB, atualiza a data de acesso |
 | **Reposicionar** | `echo >>` | a escrita começa no fim do arquivo, em vez do começo |
-| **Excluir** | `rm` | tira o nó da pasta, devolve os blocos ao disco, `free` no nó |
+| **Excluir** | `rm` | devolve os blocos ao disco e libera a posição da tabela de nós |
 | **Truncar** | `echo >` sobre arquivo existente | descarta o conteúdo antigo (libera os blocos) e grava o novo |
 
-Também foram implementadas operações compostas: `cp` (ler + criar + escrever), `mv` (só move o nó na árvore, sem copiar dados) e `stat` (ler os atributos).
+Também foram implementadas operações compostas: `cp` (ler + criar + escrever), `mv` (só troca o índice da pasta-mãe, sem copiar dados) e `stat` (ler os atributos).
 
 **`cp` × `mv`:** o `cp` cria um **inode novo** com **blocos novos**. O `mv` mantém **o mesmo inode e os mesmos blocos**: só troca o nó de lugar e/ou de nome. Dá para ver isso com o `stat` antes e depois de cada um.
 
@@ -389,9 +409,9 @@ Todo comando verifica os casos de erro antes de agir e mostra uma mensagem clara
 
 ## 8. Gerenciamento de memória
 
-- Cada nó da árvore é criado com `calloc` em `criar_no` e liberado com `free` em `liberar_no_e_todos_os_filhos`.
-- `rm` e `rmdir` liberam o nó **e** devolvem os blocos ao disco.
-- Ao digitar `exit` (ou Ctrl+D), `encerrar_sistema_de_arquivos` percorre a árvore inteira, de baixo para cima, liberando tudo.
+- A tabela de nós (o array de structs) é criada com **um** `calloc` em `iniciar_sistema_de_arquivos` e liberada com **um** `free` em `encerrar_sistema_de_arquivos`. O `calloc` zera tudo, então todas as posições começam livres (`em_uso = false`).
+- `rm` e `rmdir` devolvem os blocos ao disco e zeram a posição do nó (`memset`), que fica livre para outro arquivo.
+- Ao digitar `exit` (ou Ctrl+D), `encerrar_sistema_de_arquivos` apaga a árvore de baixo para cima (devolvendo os blocos) e depois faz o `free` do vetor.
 - O disco simulado é um vetor estático (não usa `malloc`), então não precisa ser liberado.
 - Verificado **sem vazamentos** com `leaks --atExit` (macOS) depois de uma sessão com todos os comandos. No Linux: `make valgrind`.
 
@@ -404,4 +424,5 @@ Todo comando verifica os casos de erro antes de agir e mostra uma mensagem clara
 - `chmod` só no modo numérico (`754`), sem `u+x`.
 - `rm -r` não existe; pastas são apagadas vazias com `rmdir`.
 - Não há links (`ln`), um dos bônus citados no enunciado.
-- O `ls` mostra o item mais novo primeiro, porque cada filho novo entra no começo da lista.
+- No máximo 128 arquivos + pastas ao mesmo tempo, porque a tabela de nós é um vetor de tamanho fixo (igual ao limite de inodes de um disco real).
+- O `ls` mostra os itens na ordem das posições do vetor (normalmente a ordem de criação), sem ordenar por nome.

@@ -11,7 +11,8 @@
  *
  * Relação com a teoria da disciplina:
  *   - struct FCB        -> File Control Block / "inode" simulado
- *   - struct NoArvore   -> diretório estruturado em árvore
+ *   - struct NoArvore   -> diretório estruturado em árvore, guardado
+ *                          num ARRAY DE STRUCTS (a tabela de nós)
  *   - struct Usuario    -> quem está tentando acessar (controle de acesso)
  *   - disco.c           -> disco simulado dividido em blocos
  */
@@ -26,6 +27,9 @@
 /* =====================================================================
  * 1. CONSTANTES
  * ===================================================================== */
+
+/* Tamanho do vetor de nós: no máximo 128 arquivos + pastas ao mesmo tempo */
+#define MAXIMO_DE_NOS            128
 
 /* Limites de nomes e caminhos */
 #define TAMANHO_MAXIMO_NOME      32   /* ex.: "relatorio.txt"          */
@@ -114,21 +118,34 @@ typedef struct {
 /*
  * NoArvore - um item da árvore de diretórios (pode ser arquivo ou pasta).
  *
- * Usamos a técnica "primeiro filho / próximo irmão":
+ * ESTRUTURA ESCOLHIDA PELO GRUPO: ARRAY DE STRUCTS.
  *
- *          /                 Cada nó só aponta para:
- *          |                   - o pai
- *         home                 - o PRIMEIRO filho
- *          |                   - o PRÓXIMO irmão
- *        alice -> bob
- *                              Assim, os filhos de uma pasta formam
- *                              uma lista encadeada (alice -> bob).
+ * Todos os arquivos e pastas moram num único vetor, a "tabela de nós"
+ * (parecida com a tabela de inodes de um disco Linux de verdade).
+ * Cada posição do vetor guarda um NoArvore.
+ *
+ * A árvore é montada só com NÚMEROS: cada nó guarda a POSIÇÃO (índice)
+ * da sua pasta-mãe dentro do vetor.
+ *
+ *   índice:   0        1        2         3        4
+ *           +------+ +------+ +-------+ +------+ +------+
+ *   nome:   |  /   | | home | | alice | | bob  | | (livre)
+ *   pai:    |  0   | |  0   | |   1   | |  1   | |  -   |
+ *           +------+ +------+ +-------+ +------+ +------+
+ *
+ *   Isso desenha a árvore:      /
+ *                               └── home
+ *                                   ├── alice
+ *                                   └── bob
+ *
+ *   - Os filhos de uma pasta são todos os nós cujo "pai" é o índice dela.
+ *   - A raiz fica sempre no índice 0 e é pai de si mesma.
+ *   - Uma posição com em_uso == false está livre para um arquivo novo.
  */
-typedef struct NoArvore {
-    FCB              fcb;
-    struct NoArvore *pai;
-    struct NoArvore *primeiro_filho;   /* só faz sentido em diretórios */
-    struct NoArvore *proximo_irmao;
+typedef struct {
+    bool  em_uso;          /* esta posição do vetor está ocupada?     */
+    FCB   fcb;
+    int   indice_do_pai;   /* posição da pasta-mãe dentro do vetor    */
 } NoArvore;
 
 /* O que pode acontecer ao tentar gravar um conteúdo no disco. */
@@ -150,7 +167,8 @@ typedef struct {
  * 3. VARIÁVEIS GLOBAIS
  * (definidas em arvore.c e terminal.c)
  * ===================================================================== */
-extern NoArvore *raiz;               /* a pasta "/"                     */
+extern NoArvore *tabela_de_nos;      /* o vetor com MAXIMO_DE_NOS nós   */
+extern NoArvore *raiz;               /* a pasta "/" (tabela_de_nos[0])  */
 extern NoArvore *diretorio_atual;    /* onde o usuário está agora       */
 extern Usuario   usuario_atual;      /* quem está usando o terminal     */
 
@@ -164,13 +182,17 @@ void      iniciar_sistema_de_arquivos(void);
 void      encerrar_sistema_de_arquivos(void);
 NoArvore *criar_no(const char *nome, TipoArquivo tipo);
 void      adicionar_filho(NoArvore *pasta, NoArvore *filho);
+int       indice_do_no(NoArvore *no);
+NoArvore *pasta_de_cima(NoArvore *no);
+bool      e_filho_de(NoArvore *no, NoArvore *pasta);
+bool      pasta_esta_vazia(NoArvore *pasta);
+int       contar_nos_em_uso(void);
 NoArvore *procurar_filho_pelo_nome(NoArvore *pasta, const char *nome);
 NoArvore *encontrar_pelo_caminho(const char *caminho);
 void      montar_caminho_completo(NoArvore *no, char *destino, size_t tamanho_destino);
 bool      nome_e_valido(const char *nome);
 bool      e_diretorio(NoArvore *no);
 bool      separar_pasta_e_nome(const char *caminho, NoArvore **pasta_encontrada, char *nome_encontrado);
-void      remover_filho_da_pasta(NoArvore *pasta, NoArvore *filho);
 void      liberar_no_e_todos_os_filhos(NoArvore *no);
 bool      esta_dentro_de(NoArvore *possivel_descendente, NoArvore *pasta);
 

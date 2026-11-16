@@ -93,30 +93,42 @@ As vantagens da árvore (o enunciado pede para discutir):
 - **Nomeação:** o nome só precisa ser único **dentro da mesma pasta**. Podem existir `/home/alice/notas.txt` e `/home/bob/notas.txt` ao mesmo tempo.
 - **Agrupamento:** coisas relacionadas ficam juntas.
 
-### 4.2 Como a árvore fica na memória
+### 4.2 Como a árvore fica na memória: um array de structs
 
-Uma pasta pode ter **qualquer quantidade de filhos**: 0, 2 ou 500. Um vetor fixo de filhos desperdiçaria espaço numa pasta vazia e não caberia numa pasta grande.
+O enunciado (item 3.1) deixa cada grupo escolher a estrutura de dados: **árvore binária, lista encadeada ou array de structs**. O nosso grupo escolheu o **array de structs**.
 
-Usamos a técnica **"primeiro filho / próximo irmão"**. Cada item da árvore (um **nó**) guarda só três "setas" (ponteiros):
-- **pai**: a pasta onde ele está;
-- **primeiro filho**: o primeiro item dentro dele (se for pasta);
-- **próximo irmão**: o próximo item da mesma pasta.
+A ideia é que todos os arquivos e todas as pastas moram **num único vetor**, a **tabela de nós**, com 128 posições. Cada posição é uma struct `NoArvore`, com três coisas:
+- **`em_uso`**: diz se a posição está ocupada ou livre;
+- **`fcb`**: a ficha do arquivo (seção 3);
+- **`indice_do_pai`**: o **número da posição** da pasta onde ele está.
+
+Não tem seta nenhuma, só números. A árvore aparece quando a gente lê os índices:
 
 ```
-Árvore:                 Na memória:
+ índice:   0        1        2         3        4          5
+         +------+ +------+ +-------+ +------+ +-----------+ +------+
+ nome:   |  /   | | home | | alice | | bob  | | notas.txt | |livre |
+ pai:    |  0   | |  0   | |   1   | |  1   | |     2     | |  -   |
+         +------+ +------+ +-------+ +------+ +-----------+ +------+
 
-      /                 /
-      |                 └─ primeiro filho ─▶ home
-    home                                     └─ primeiro filho ─▶ alice ── próximo irmão ──▶ bob
-   /    \                                                          └─ primeiro filho ─▶ notas.txt
-alice    bob
-  |
-notas.txt
+ Isso desenha:    /
+                  └── home
+                      ├── alice
+                      │   └── notas.txt
+                      └── bob
 ```
 
-Os filhos de uma pasta viram uma **lista encadeada**. Para listar uma pasta (`ls`), é só começar no primeiro filho e seguir as setas de "próximo irmão" até acabar. Não tem limite de itens, não desperdiça espaço e cada nó tem tamanho fixo.
+- A **raiz** fica sempre na posição 0 e é **pai de si mesma**.
+- Os **filhos** de uma pasta são todos os nós cujo `indice_do_pai` é o número dela. O `home` é o 1, então `alice` e `bob` (pai = 1) são filhos dele.
+- **Criar** um arquivo = achar a primeira posição livre, preencher a ficha e anotar o número da pasta.
+- **Apagar** = devolver os blocos e marcar a posição como livre. Ela é reaproveitada pelo próximo arquivo criado.
+- **Mover** (`mv`) = trocar um número só, o `indice_do_pai`.
+- **Listar** (`ls`) = percorrer o vetor inteiro e mostrar quem tem `indice_do_pai` igual ao da pasta.
 
-Um item novo entra **no começo** da lista, porque é o jeito mais rápido (não precisa andar até o fim). Por isso o nosso `ls` mostra primeiro o item mais recente.
+Isso é muito parecido com o Linux de verdade: o disco guarda os inodes numa **tabela de tamanho fixo**, criada quando o disco é formatado. É por isso que um disco real tem um número máximo de arquivos (o `df -i` mostra). O nosso limite é 128 arquivos + pastas, e o comando `disk` mostra quantas posições estão em uso.
+
+**Vantagens:** é simples (um vetor e um número por nó, nada para religar), chega em qualquer nó direto pelo índice (`tabela_de_nos[i]`) e usa um único `calloc` e um único `free`.\
+**Desvantagens:** tem limite fixo, e listar uma pasta ou procurar um nome percorre o vetor inteiro (128 posições), não só os itens daquela pasta. Com 128 posições isso é instantâneo.
 
 ### 4.3 Caminhos, `.` e `..`
 
@@ -125,7 +137,7 @@ Um item novo entra **no começo** da lista, porque é o jeito mais rápido (não
 - **`.`** é a própria pasta, e **`..`** é a pasta de cima.
 - **O pai da raiz é a própria raiz**, então `cd ..` em `/` continua em `/`, igual no Linux.
 
-O programa sabe "onde você está" por uma variável chamada `diretorio_atual`. O `cd` só troca essa variável. O `pwd` sobe de pai em pai até a raiz para montar o caminho.
+O programa sabe "onde você está" por uma variável chamada `diretorio_atual`. O `cd` só troca essa variável. O `pwd` sobe seguindo o `indice_do_pai` até chegar na posição 0 (a raiz) para montar o caminho.
 
 ### 4.4 O que o programa impede
 
@@ -139,11 +151,11 @@ O programa sabe "onde você está" por uma variável chamada `diretorio_atual`. 
 
 | Operação | Comando | O que acontece |
 |---|---|---|
-| **Criar** | `touch a.txt` ou `echo oi > a.txt` | nasce uma ficha nova (FCB) com inode novo, ligada na pasta |
+| **Criar** | `touch a.txt` ou `echo oi > a.txt` | nasce uma ficha nova (FCB) com inode novo, numa posição livre da tabela de nós |
 | **Escrever** | `echo texto > a.txt` | o texto é cortado em pedaços e guardado em blocos |
 | **Ler** | `cat a.txt` | os pedaços são buscados nos blocos, na ordem, e juntados |
 | **Reposicionar** | `echo texto >> a.txt` | a escrita começa no **fim** do arquivo |
-| **Excluir** | `rm a.txt` | a ficha sai da pasta, os blocos são liberados e a memória é devolvida |
+| **Excluir** | `rm a.txt` | os blocos são liberados e a posição do arquivo na tabela de nós fica livre |
 | **Truncar** | `echo novo > a.txt` (arquivo existente) | o conteúdo antigo é jogado fora e fica só o novo |
 
 > **Sinceridade sobre o "reposicionar":** no Linux, reposicionar é o `lseek`, que move um "cursor" dentro do arquivo aberto. Nosso programa não tem "abrir arquivo" com cursor: cada comando lê ou grava o arquivo inteiro. O `>>` é o mais perto disso, porque escreve a partir do fim. Se o professor perguntar, responda exatamente isso. Admitir a limitação e explicar o motivo vale mais do que forçar.
@@ -157,7 +169,7 @@ No Linux, `echo oi > a.txt` cria um arquivo com **3 bytes**: `o`, `i` e uma queb
 ### 5.3 A diferença mais importante: `cp` × `mv`
 
 - **`cp a.txt b.txt`** cria um arquivo **novo**: o `b.txt` ganha **outro inode** e **outros blocos**, com uma cópia do conteúdo. São dois arquivos independentes.
-- **`mv a.txt b.txt`** **não copia nada**. É o **mesmo inode e os mesmos blocos**. Só muda o nome na ficha e, talvez, a pasta onde o nó está pendurado.
+- **`mv a.txt b.txt`** **não copia nada**. É o **mesmo inode e os mesmos blocos**. Só muda o nome na ficha e, talvez, o número da pasta-mãe (`indice_do_pai`).
 
 Na demo, o `stat` prova isso: depois do `cp`, a cópia tem inode **6** (o original era 5) e outro bloco. Depois do `mv`, continua inode **6** e o mesmo bloco. É por isso que, no Linux, mover um arquivo enorme no mesmo disco é instantâneo, e copiar demora.
 
@@ -245,7 +257,10 @@ Existe também um **mapa de blocos livres**, que diz se cada bloco está ocupado
    0 | #######.........................
   32 | ................................
 7 de 256 blocos ocupados (64 bytes por bloco)
+7 de 128 posições da tabela de nós em uso (arquivos + pastas)
 ```
+
+A última linha não é do disco: mostra quantas posições do array de structs (seção 4.2) estão ocupadas.
 
 ### 7.2 Os três métodos de alocação
 
@@ -307,7 +322,7 @@ Veja o que acontece com `echo oi > notas.txt`, digitado pela alice em `/home/ali
 3. Procura o arquivo. Ele não existe, então vai ser criado.
 4. Verifica a permissão: a alice pode escrever na pasta? Ela é a dona e a pasta é `755`, então sim.
 5. Cria o FCB: inode novo, dona = alice, permissões `644`, datas = agora.
-6. Pendura a ficha no começo da lista de filhos da pasta.
+6. Pega a primeira posição livre da tabela de nós, coloca a ficha lá e anota o número da pasta em `indice_do_pai`.
 7. Monta o conteúdo: `oi` + `\n` = 3 bytes.
 8. Grava: 3 bytes cabem em 1 bloco. Pega o primeiro livre (digamos o 0) e anota `blocos = {0}`.
 9. Atualiza o tamanho, o tipo e a data de modificação.
@@ -316,11 +331,13 @@ E `cat notas.txt`: acha o arquivo → confere se a alice pode **ler** → lê o 
 
 ## 9. Memória: o tal "memory leak"
 
-Cada pasta e cada arquivo ocupam memória, pedida com **`calloc`** (primo do `malloc`). Em C, ninguém devolve essa memória automaticamente: se o programa pede e nunca devolve com **`free`**, a memória fica presa. Isso é o **vazamento de memória** (*memory leak*), e conta nota no critério de robustez.
+Em C, a memória pedida com **`malloc`/`calloc`** não é devolvida sozinha: se o programa pede e nunca devolve com **`free`**, ela fica presa. Isso é o **vazamento de memória** (*memory leak*), e conta nota no critério de robustez.
 
-- **`rm` e `rmdir`** devolvem a memória do item e liberam os blocos dele.
-- **Ao sair**, o programa percorre a árvore **de baixo para cima** (filhos antes do pai) e devolve tudo. Se apagasse o pai primeiro, perderia as setas para os filhos e não teria mais como achá-los.
-- Testamos com `leaks` (Mac) / `valgrind` (Linux), usando todos os comandos: **0 vazamentos**.
+No nosso trabalho, a tabela de nós (o array de structs) é pedida com **um `calloc`** quando o programa começa e devolvida com **um `free`** quando ele termina. Um pedido, uma devolução: não tem como esquecer um nó para trás.
+
+- **`rm` e `rmdir`** devolvem os blocos do item ao disco e zeram a posição dele no vetor, que fica livre.
+- **Ao sair**, o programa apaga a árvore **de baixo para cima** (filhos antes do pai), devolvendo os blocos de cada arquivo, e só então faz o `free` do vetor.
+- Testamos com `leaks` (Mac) / `valgrind` (Linux), usando todos os comandos e até enchendo a tabela: **0 vazamentos**.
 
 ## 10. Roteiro da apresentação
 
@@ -328,11 +345,11 @@ Os comandos estão em `demo/roteiro_apresentacao.txt`. Compile com `make` e abra
 
 **Parte 1 — Pastas (3.1).** `mkdir`, `cd`, `ls -l`, `pwd`.
 
-> "As pastas são uma árvore. Cada item é um nó com três ponteiros: pai, primeiro filho e próximo irmão. Assim uma pasta pode ter quantos itens quiser, sem desperdiçar memória. O `cd` só muda a variável da pasta atual, e o `pwd` sobe de pai em pai até a raiz."
+> "O enunciado deixava escolher árvore binária, lista encadeada ou array de structs, e a gente escolheu o array. Todos os arquivos e pastas ficam num vetor, a tabela de nós, igual à tabela de inodes do Linux. Cada nó guarda o número da posição da pasta onde está, e isso forma a árvore. O `cd` só muda a variável da pasta atual, e o `pwd` sobe pelos índices até a raiz, que é a posição 0."
 
 **Parte 2 — Arquivos e FCB (3.2).** `echo >`, `cat`, `echo >>`, `stat`, `cp`, `mv`.
 
-> "Cada arquivo tem um FCB, o inode simulado, com nome, inode, tipo, tamanho, permissões, dono e as três datas. O `stat` mostra a ficha. Reparem: o `cp` gerou um inode novo, o 6, com outro bloco. O `mv` manteve o inode 6 e o mesmo bloco, porque mover não copia dados, só muda o nó de lugar."
+> "Cada arquivo tem um FCB, o inode simulado, com nome, inode, tipo, tamanho, permissões, dono e as três datas. O `stat` mostra a ficha. Reparem: o `cp` gerou um inode novo, o 6, com outro bloco. O `mv` manteve o inode 6 e o mesmo bloco, porque mover não copia dados, só troca o número da pasta-mãe."
 
 **Parte 3 — Blocos (3.4).** `disk`, `echo` grande, `stat`, `rm`, `echo` grande, `stat`, `disk`.
 
@@ -355,8 +372,14 @@ Os comandos estão em `demo/roteiro_apresentacao.txt`. Compile com `make` e abra
 **"O que é o FCB e o que ele guarda?"**\
 A ficha de controle do arquivo, o equivalente ao inode. Guarda nome, inode, tipo, tamanho, permissões, dono, grupo, as três datas e a lista dos blocos. Não guarda o conteúdo.
 
-**"Por que essa estrutura de árvore?"**\
-Uma pasta pode ter qualquer número de filhos. Com "primeiro filho / próximo irmão", cada nó tem só 3 ponteiros, os filhos formam uma lista encadeada, não há limite nem desperdício.
+**"Qual estrutura de dados vocês usaram para os diretórios?"**\
+Array de structs. Todos os nós ficam num vetor de 128 posições (a tabela de nós), e cada nó guarda o índice da pasta-mãe. A raiz é a posição 0 e é pai de si mesma. É o mesmo jeito que o Linux guarda os inodes numa tabela fixa.
+
+**"Se é um vetor, onde está a árvore?"**\
+Nos índices. Cada nó aponta para o pai por número, então dá para subir até a raiz (`pwd`, `cd ..`) e achar os filhos de uma pasta procurando quem tem o número dela como pai.
+
+**"E o limite de 128?"**\
+É a desvantagem do array: tamanho fixo. Passou disso, aparece "limite atingido". O Linux real tem o mesmo tipo de limite de inodes, definido na formatação.
 
 **"Quais as vantagens do diretório em árvore?"**\
 Eficiência (só percorre o caminho), nomeação (nome único só dentro da pasta) e agrupamento.
@@ -383,10 +406,10 @@ Interna é a sobra dentro do último bloco, e acontece sempre. Externa é o espa
 A gravação confere antes de começar. Se não couber, mostra "disco cheio" e não mexe em nada, então o conteúdo antigo continua intacto.
 
 **"`cp` × `mv` por dentro?"**\
-O `cp` cria FCB novo (inode novo) e blocos novos. O `mv` só tira o nó de uma pasta e põe em outra: mesmo inode, mesmos blocos.
+O `cp` cria FCB novo (inode novo) e blocos novos. O `mv` só troca o `indice_do_pai` (e o nome): mesmo inode, mesmos blocos.
 
 **"Como evitam memory leak?"**\
-`calloc` para criar e `free` para liberar. O `rm` libera o nó e os blocos. Ao sair, uma função recursiva libera tudo, começando pelos filhos. Testado: 0 vazamentos.
+A tabela de nós é um único `calloc` no começo e um único `free` no fim. O `rm` devolve os blocos e libera a posição. Ao sair, uma função recursiva apaga tudo, começando pelos filhos, e depois o vetor é liberado. Testado: 0 vazamentos.
 
 **"Onde está o 'usuário atual'?"**\
 Numa variável global, `usuario_atual`, como o enunciado sugere. O `su` troca o valor dela.
@@ -403,7 +426,7 @@ Não é preciso decorar linhas. O importante é conseguir apontar para um trecho
 |---|---|
 | `sistema_arquivos.h` | a "planta baixa": structs, constantes e a lista de funções |
 | `main.c` | liga tudo: inicia, roda o terminal, libera a memória |
-| `arvore.c` | criar, procurar e apagar nós da árvore |
+| `arvore.c` | a tabela de nós (o array): criar, procurar e apagar nós |
 | `comandos_diretorio.c` | `mkdir`, `cd`, `ls`, `pwd`, `rmdir` — **objetivo 3.1** |
 | `comandos_arquivo.c` | `touch`, `echo`, `cat`, `cp`, `mv`, `rm`, `stat`, `./` — **objetivo 3.2** |
 | `permissoes.c` | verificação rwx, texto `rwxr-xr-x`, `chmod` — **objetivo 3.3** |
@@ -484,114 +507,120 @@ typedef struct {
 - **`blocos_do_arquivo[16]` + `quantidade_de_blocos`** são o **índice** da alocação indexada. Só as primeiras `quantidade_de_blocos` posições valem, e sem o contador não daria para saber onde a lista acaba.
 
 ```c
-typedef struct NoArvore {
-    FCB              fcb;
-    struct NoArvore *pai;
-    struct NoArvore *primeiro_filho;
-    struct NoArvore *proximo_irmao;
+#define MAXIMO_DE_NOS 128
+
+typedef struct {
+    bool  em_uso;
+    FCB   fcb;
+    int   indice_do_pai;
 } NoArvore;
 ```
 
-- **`FCB fcb`** sem asterisco: a ficha mora **dentro** do nó, então um `calloc` cria os dois e um `free` libera os dois.
-- **Os ponteiros** guardam **endereços** de outros nós ("setas"). `NULL` significa "não aponta para ninguém".
-- **`struct NoArvore` com nome antes do `{`:** a struct aponta para ela mesma, e dentro das chaves o apelido `NoArvore` ainda não existe.
+- **`FCB fcb`** sem asterisco: a ficha mora **dentro** do nó, então cada posição do vetor já tem a ficha inteira.
+- **`em_uso`**: como o vetor tem tamanho fixo, é preciso marcar quais posições valem. `false` = posição livre.
+- **`indice_do_pai`** é um `int`, e não um ponteiro: guarda a **posição** da pasta-mãe dentro do vetor. É isso que monta a árvore.
 
 ### 13.3 Globais com `extern`
 
 ```c
+extern NoArvore *tabela_de_nos;
 extern NoArvore *raiz;
 extern NoArvore *diretorio_atual;
 extern Usuario   usuario_atual;
 ```
 
-`extern` quer dizer "esta variável existe, mas foi criada em outro arquivo". Assim todos os `.c` usam **as mesmas** variáveis.
+`extern` quer dizer "esta variável existe, mas foi criada em outro arquivo". Assim todos os `.c` usam **as mesmas** variáveis. `raiz` e `diretorio_atual` são ponteiros para **posições do vetor** (`raiz` = `&tabela_de_nos[0]`).
 
-## 14. `arvore.c` — a estrutura da árvore
+## 14. `arvore.c` — a tabela de nós
 
-### 14.1 Iniciar
+### 14.1 Iniciar e encerrar
 
 ```c
-iniciar_disco();
+tabela_de_nos = calloc(MAXIMO_DE_NOS, sizeof(NoArvore));
+if (tabela_de_nos == NULL) { ... exit(EXIT_FAILURE); }
 raiz = criar_no("/", TIPO_DIRETORIO);
-raiz->pai = raiz;
+raiz->indice_do_pai = INDICE_DA_RAIZ;   /* 0 */
 diretorio_atual = raiz;
 ```
 
-**`raiz->pai = raiz`**: fazendo a raiz apontar para si mesma, o `cd ..` na raiz funciona sem `if` especial. O `->` acessa um campo **através de um ponteiro**.
+- **`calloc(128, sizeof(NoArvore))`** pede o vetor inteiro de uma vez e **zera** tudo. Zerado, todo `em_uso` começa `false`, ou seja, todas as posições começam livres. Com `malloc`, teriam lixo.
+- **Checar `NULL`:** se faltar memória, o `calloc` devolve `NULL`, e usar isso travaria o programa.
+- **A raiz é o primeiro nó criado**, então cai na posição 0. Fazendo ela ser **pai de si mesma**, o `cd ..` na raiz continua na raiz sem `if` especial.
 
-### 14.2 `criar_no`
+No fim, `encerrar_sistema_de_arquivos` apaga a árvore e faz **`free(tabela_de_nos)`**: um `free` para o único `calloc`.
+
+### 14.2 As funções pequenas do vetor
 
 ```c
-NoArvore *novo = calloc(1, sizeof(NoArvore));
-if (novo == NULL) {
-    printf("Erro fatal: acabou a memória do computador.\n");
-    exit(EXIT_FAILURE);
+int indice_do_no(NoArvore *no)       { return (int)(no - tabela_de_nos); }
+NoArvore *pasta_de_cima(NoArvore *no){ return &tabela_de_nos[no->indice_do_pai]; }
+
+bool e_filho_de(NoArvore *no, NoArvore *pasta)
+{
+    if (!no->em_uso)  { return false; }
+    if (no == pasta)  { return false; }
+    return no->indice_do_pai == indice_do_no(pasta);
 }
+```
+
+- **`no - tabela_de_nos`**: subtrair dois ponteiros do mesmo vetor dá a distância entre eles, ou seja, o **índice**. Se `no` é `&tabela_de_nos[3]`, a conta dá 3.
+- **`pasta_de_cima`** faz o caminho contrário: do índice para o nó. O `&` pega o endereço da posição.
+- **`e_filho_de`** é a pergunta que o programa inteiro faz. Posição livre não é filho de ninguém, e o `no == pasta` existe por causa da raiz, que é pai de si mesma, mas não é filha de si mesma (senão o `ls /` mostraria a própria raiz).
+
+`pasta_esta_vazia` e `contar_nos_em_uso` são só um `for` pelo vetor usando essas funções.
+
+### 14.3 `criar_no`
+
+```c
+NoArvore *novo = NULL;
+for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+    if (!tabela_de_nos[i].em_uso) {
+        novo = &tabela_de_nos[i];
+        break;
+    }
+}
+if (novo == NULL) {
+    return NULL;
+}
+memset(novo, 0, sizeof(NoArvore));
+novo->em_uso = true;
 novo->fcb.numero_inode = proximo_numero_inode;
 proximo_numero_inode = proximo_numero_inode + 1;
 strncpy(novo->fcb.nome, nome, TAMANHO_MAXIMO_NOME - 1);
 ...
-novo->fcb.id_do_dono  = usuario_atual.id_do_usuario;
-novo->fcb.id_do_grupo = usuario_atual.id_do_grupo;
 ```
 
-- **`calloc` e não `malloc`:** o `calloc` **zera** a memória, então todos os ponteiros já nascem `NULL`. Com `malloc`, eles teriam lixo, e seguir um ponteiro com lixo trava o programa (*segmentation fault*).
-- **Checar `NULL`:** se faltar memória, o `calloc` devolve `NULL`, e usar esse ponteiro travaria tudo.
-- **`proximo_numero_inode`** é uma variável `static` que só cresce, então o inode nunca se repete. `static` fora de função = só `arvore.c` enxerga.
-- **`strncpy` com `- 1`:** copia no máximo 31 caracteres, para nunca passar do vetor (*buffer overflow*). A última posição já é `'\0'` porque o `calloc` zerou tudo.
+- **Procura a primeira posição livre**, igual ao first-fit dos blocos (seção 16). O `break` para no primeiro achado.
+- **Devolve `NULL` se o vetor estiver cheio.** Quem chama (`mkdir`, `touch`, `cp`) mostra "limite de 128 arquivos e pastas atingido".
+- **`memset(..., 0, ...)`** zera a posição, porque ela pode ter sido de um arquivo apagado antes. Assim não sobra lixo.
+- **`proximo_numero_inode`** é `static` e só cresce, então o inode nunca se repete, mesmo quando a posição do vetor é reaproveitada. Posição e inode são coisas diferentes.
+- **`strncpy` com `- 1`:** copia no máximo 31 caracteres, e o último já é `'\0'` por causa do `memset`.
 - **Quem cria vira o dono**, e as permissões padrão são 755 para pasta e 644 para arquivo.
 
-### 14.3 `adicionar_filho`
+### 14.4 `adicionar_filho`
 
 ```c
-filho->pai            = pasta;
-filho->proximo_irmao  = pasta->primeiro_filho;
-pasta->primeiro_filho = filho;
+filho->indice_do_pai = indice_do_no(pasta);
 ```
 
-```
-antes:    pasta ─▶ A ─▶ B
-depois:   pasta ─▶ filho ─▶ A ─▶ B
-```
-
-**A ordem das duas últimas linhas importa.** Se a pasta apontasse para o filho primeiro, a seta para `A` se perderia, e todos os filhos antigos sumiriam. Inserir no começo é **O(1)**: são sempre 3 linhas, não importa o tamanho da pasta.
-
-### 14.4 `remover_filho_da_pasta`
-
-```c
-if (pasta->primeiro_filho == filho) {
-    pasta->primeiro_filho = filho->proximo_irmao;
-} else {
-    NoArvore *anterior = pasta->primeiro_filho;
-    while (anterior != NULL && anterior->proximo_irmao != filho) {
-        anterior = anterior->proximo_irmao;
-    }
-    if (anterior != NULL) {
-        anterior->proximo_irmao = filho->proximo_irmao;
-    }
-}
-```
-
-Tirar da lista é "fazer o anterior pular o filho" (`A ─▶ filho ─▶ C` vira `A ─▶ C`). Se o filho é o primeiro, a pasta aponta para o segundo. Senão, é preciso **achar o anterior**, porque a lista só anda para a frente. O `anterior != NULL &&` vem primeiro porque o `&&` para no primeiro falso, e assim nunca lê um ponteiro `NULL`.
-
-Essa função **não libera memória**, só desliga o nó. O `mv` usa isso para mudar o nó de pasta, e o `rm` chama o `free` depois.
+Uma linha só: colocar um nó dentro de uma pasta é **anotar o número da pasta** nele. A mesma função serve para um nó recém-criado e para **mover** um nó que estava em outra pasta (`mv`).
 
 ### 14.5 `procurar_filho_pelo_nome`
 
 ```c
 if (strcmp(nome, ".") == 0)  { return pasta; }
-if (strcmp(nome, "..") == 0) { return pasta->pai; }
+if (strcmp(nome, "..") == 0) { return pasta_de_cima(pasta); }
 
-NoArvore *filho = pasta->primeiro_filho;
-while (filho != NULL) {
-    if (strcmp(filho->fcb.nome, nome) == 0) {
-        return filho;
+for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+    NoArvore *candidato = &tabela_de_nos[i];
+    if (e_filho_de(candidato, pasta) && strcmp(candidato->fcb.nome, nome) == 0) {
+        return candidato;
     }
-    filho = filho->proximo_irmao;
 }
 return NULL;
 ```
 
+- **Percorre o vetor inteiro**: a cada posição, pergunta "é filho desta pasta **e** tem esse nome?".
 - **`strcmp` devolve 0 quando os textos são iguais.** Em C, `nome == "."` compararia **endereços**, e não letras.
 - Como `.` e `..` são tratados aqui, num lugar só, eles funcionam em qualquer comando.
 
@@ -629,26 +658,25 @@ return posicao;
 Usada para **criar** coisas: em `echo oi > docs/novo.txt`, o arquivo ainda não existe, então é preciso achar a pasta `docs` e separar o nome `novo.txt`.
 
 - **`strrchr(caminho, '/')`** acha a **última** barra. O que vem antes é a pasta, e o que vem depois é o nome.
-- **`ultima_barra - caminho`**: subtrair dois ponteiros do mesmo texto dá a distância entre eles (aritmética de ponteiros).
+- **`ultima_barra - caminho`**: subtrair dois ponteiros do mesmo texto dá a distância entre eles (a mesma ideia do `indice_do_no`).
 - **Nome com 32 caracteres ou mais** não é cortado escondido: a função devolve um nome vazio, e quem chamou recusa com "nome inválido".
 - **`NoArvore **pasta_encontrada`** (ponteiro para ponteiro): o `return` já diz se deu certo. Para devolver também a pasta, quem chama passa `&pasta`, e a função escreve `*pasta_encontrada = pasta`.
 
 ### 14.8 `liberar_no_e_todos_os_filhos`
 
 ```c
-NoArvore *filho = no->primeiro_filho;
-while (filho != NULL) {
-    NoArvore *proximo = filho->proximo_irmao;
-    liberar_no_e_todos_os_filhos(filho);
-    filho = proximo;
+for (int i = 0; i < MAXIMO_DE_NOS; i++) {
+    if (e_filho_de(&tabela_de_nos[i], no)) {
+        liberar_no_e_todos_os_filhos(&tabela_de_nos[i]);
+    }
 }
 liberar_todos_os_blocos_do_arquivo(&no->fcb);
-free(no);
+memset(no, 0, sizeof(NoArvore));
 ```
 
-- **Recursiva:** libera cada filho (que libera os filhos dele...) e só no fim o próprio nó. É o "de baixo para cima".
-- **A linha mais importante é guardar o `proximo` ANTES.** Depois do `free(filho)`, ler `filho->proximo_irmao` seria usar memória já devolvida (*use-after-free*).
-- Os blocos são devolvidos **antes** do `free`, porque depois não haveria mais a lista deles.
+- **Recursiva:** procura no vetor os filhos do nó e apaga cada um (que apaga os filhos dele...). Só no fim apaga o próprio nó. É o "de baixo para cima".
+- Os blocos são devolvidos **antes** do `memset`, porque depois a lista de blocos do FCB estaria zerada.
+- **Não tem `free` aqui:** o nó não foi pedido sozinho, ele é uma posição do vetor. Apagar = zerar a posição (`em_uso` volta a `false`). O `free` é um só, do vetor inteiro, no fim do programa.
 
 ## 15. `permissoes.c` — a parte com bits
 
@@ -822,14 +850,13 @@ conteudo_novo[tamanho_atual + tamanho_do_texto] = '\n';
 ### 17.3 `rm`
 
 ```c
-NoArvore *pasta = arquivo->pai;
+NoArvore *pasta = pasta_de_cima(arquivo);
 if (!usuario_tem_permissao(&pasta->fcb, &usuario_atual, PERMISSAO_DE_ESCRITA)) { ... }
-remover_filho_da_pasta(pasta, arquivo);
 liberar_no_e_todos_os_filhos(arquivo);
 ```
 
-- A permissão é checada **na pasta** (`arquivo->pai`).
-- **Primeiro desliga, depois libera.** Ao contrário, a pasta ficaria apontando para memória que não existe mais (ponteiro pendurado), e o próximo `ls` travaria.
+- A permissão é checada **na pasta** (`pasta_de_cima(arquivo)`), e não no arquivo.
+- Apagar = devolver os blocos e zerar a posição no vetor. Como ninguém guarda o endereço do arquivo (os filhos são achados pelo `indice_do_pai`), não sobra nada apontando para ele.
 
 ### 17.4 `cp`
 
@@ -843,22 +870,21 @@ if (esta_dentro_de(pasta_destino, item)) {
     return;
 }
 ...
-NoArvore *pasta_origem = item->pai;
+NoArvore *pasta_origem = pasta_de_cima(item);
 ...
-remover_filho_da_pasta(pasta_origem, item);
 strncpy(item->fcb.nome, nome_destino, TAMANHO_MAXIMO_NOME - 1);
 adicionar_filho(pasta_destino, item);
 ```
 
-- **`esta_dentro_de`** sobe de pai em pai a partir do destino. Se encontrar o item no caminho, o movimento criaria um laço, então bloqueia. Ela para na raiz, porque o pai da raiz é ela mesma e o loop nunca acabaria.
+- **`esta_dentro_de`** sobe pelos `indice_do_pai` a partir do destino. Se encontrar o item no caminho, o movimento criaria um laço, então bloqueia. Ela para na raiz, porque o pai da raiz é ela mesma e o loop nunca acabaria.
 - Exige `w` na pasta de onde sai **e** na pasta para onde vai.
-- **`pasta_origem` é guardada antes**, porque `remover_filho_da_pasta` zera o `pai`.
-- **As três últimas linhas são o `mv` inteiro:** desliga, troca o nome, religa. Nenhum byte é copiado, e o inode e os blocos continuam os mesmos.
+- **`pasta_origem` é guardada antes**, porque depois do `adicionar_filho` o `indice_do_pai` já aponta para a pasta nova (e ainda precisamos atualizar a data da pasta antiga).
+- **As duas últimas linhas são o `mv` inteiro:** troca o nome e troca o número da pasta-mãe. Nenhum byte é copiado, e o inode, a posição no vetor e os blocos continuam os mesmos.
 
 ## 18. `comandos_diretorio.c`
 
 - **`mkdir`** aceita nome ou caminho (`/home/alice`), usando `separar_pasta_e_nome`. Exige `w` na pasta de cima.
-- **`cd`** exige `x` na pasta de destino. **`ls`** exige `r`.
+- **`cd`** exige `x` na pasta de destino. **`ls`** exige `r` e percorre o vetor mostrando cada nó em que `e_filho_de(no, pasta)` é verdade, na ordem das posições.
 - **`rmdir`** confere: existe? é pasta? não é a raiz nem a pasta atual (ou uma acima dela)? está vazia? E exige `w` na pasta de cima.
 - O **`ls -l`** usa `localtime` + `strftime` para transformar o `time_t` em texto (`"%d/%m %H:%M"`).
 
@@ -903,16 +929,19 @@ O `fgets` guarda o Enter (`'\n'`). O `strcspn` acha a posição dele, e o `'\0'`
 ## 21. Perguntas técnicas que podem aparecer
 
 **"Por que `calloc` e não `malloc`?"**\
-O `calloc` zera a memória, então os ponteiros nascem `NULL`. Com `malloc`, teriam lixo.
+O `calloc` zera a memória, então todo `em_uso` do vetor nasce `false` (todas as posições livres). Com `malloc`, teriam lixo e o programa acharia que posições vazias estão ocupadas.
 
 **"Por que o `0` na frente de `0644`?"**\
 Em C, número com zero na frente é octal, e permissões são octais.
 
-**"Por que guardar o `proximo` antes do `free`?"**\
-Depois do `free`, aquela memória não é mais do programa. Ler dela seria *use-after-free*.
+**"Como vocês acham a posição de um nó no vetor?"**\
+Subtraindo ponteiros: `no - tabela_de_nos` dá quantos elementos `no` está depois do começo, ou seja, o índice.
 
-**"Por que o `rm` desliga o nó antes de liberar?"**\
-Senão a pasta ficaria apontando para memória liberada, e o próximo `ls` travaria.
+**"Por que o `rm` não chama `free`?"**\
+Porque o arquivo não foi pedido com um `calloc` próprio: ele é uma posição do vetor. Apagar é zerar a posição (`memset`). O único `free` é o do vetor inteiro, no fim.
+
+**"Por que `memset` ao criar um nó?"**\
+A posição pode ter sido de um arquivo apagado. Zerar garante que não sobra lixo do arquivo antigo.
 
 **"Por que a gravação confere o espaço antes de liberar os blocos antigos?"**\
 Para, se não couber, o arquivo manter o conteúdo antigo. Ou dá certo inteiro, ou nada muda.

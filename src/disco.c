@@ -231,4 +231,6 @@ void comando_disk(void)
 
     printf("\n%d de %d blocos ocupados (%d bytes por bloco)\n",
            total_ocupados, QUANTIDADE_DE_BLOCOS_NO_DISCO, TAMANHO_DO_BLOCO);
+    printf("%d de %d posições da tabela de nós em uso (arquivos + pastas)\n",
+           contar_nos_em_uso(), MAXIMO_DE_NOS);
 }

@@ -335,6 +335,27 @@ static bool executar_linha(char *linha)
  * Loop principal
  * --------------------------------------------------------------------- */
 
+/*
+ * Cores do terminal (códigos ANSI), iguais às do prompt do Linux.
+ * Só usamos cor quando a saída é a tela; se a saída for para um
+ * arquivo (./minifs > saida.txt), os textos ficam sem cor.
+ */
+#define COR_VERDE    "\033[1;32m"
+#define COR_AZUL     "\033[1;34m"
+#define COR_AMARELA  "\033[1;33m"
+#define COR_CINZA    "\033[2m"
+#define SEM_COR      "\033[0m"
+
+static bool usar_cores = false;
+
+static const char *cor(const char *codigo)
+{
+    if (usar_cores) {
+        return codigo;
+    }
+    return "";
+}
+
 /* Mostra o prompt, ex.: "alice@minifs:/home/alice$ " */
 static void mostrar_prompt(void)
 {
@@ -349,13 +370,57 @@ static void mostrar_prompt(void)
         simbolo = '$';
     }
 
-    printf("%s@minifs:%s%c ", usuario_atual.nome, caminho_atual, simbolo);
+    /* usuário@minifs em verde, pasta atual em azul */
+    printf("%s%s@minifs%s:%s%s%s%c ",
+           cor(COR_VERDE), usuario_atual.nome, cor(SEM_COR),
+           cor(COR_AZUL), caminho_atual, cor(SEM_COR),
+           simbolo);
     fflush(stdout);
+}
+
+/*
+ * Comentários do roteiro de demonstração (linhas que começam com "#").
+ * Em vez de aparecerem como se fossem comandos, viram:
+ *   "# PARTE 1 - ..."  -> título da parte, com uma linha em branco antes
+ *   "# ======"         -> nada (era só enfeite no arquivo do roteiro)
+ *   "# outro texto"    -> uma nota explicando o próximo comando
+ */
+static void mostrar_comentario_do_roteiro(char *linha)
+{
+    linha[strcspn(linha, "\n")] = '\0';
+
+    /* Pula o "#" e os espaços depois dele */
+    char *texto = linha + 1;
+    while (*texto == ' ') {
+        texto++;
+    }
+
+    bool linha_so_de_enfeite = (texto[0] == '=' || texto[0] == '\0');
+    if (linha_so_de_enfeite) {
+        return;
+    }
+
+    if (strncmp(texto, "PARTE", 5) == 0) {
+        printf("\n%s== %s ==%s\n\n", cor(COR_AMARELA), texto, cor(SEM_COR));
+    } else {
+        printf("\n%s  -> %s%s\n", cor(COR_CINZA), texto, cor(SEM_COR));
+    }
+}
+
+/* A linha (sem os espaços do começo) é um comentário "# ..."? */
+static bool e_comentario(const char *linha)
+{
+    while (*linha == ' ' || *linha == '\t') {
+        linha++;
+    }
+    return linha[0] == '#';
 }
 
 void rodar_terminal(void)
 {
     char linha[TAMANHO_MAXIMO_LINHA];
+
+    usar_cores = isatty(fileno(stdout));
 
     printf("Mini sistema de arquivos em memória. Digite 'help' para ver os comandos.\n");
 
@@ -368,7 +433,10 @@ void rodar_terminal(void)
     bool entrada_e_o_teclado = isatty(fileno(stdin));
 
     while (true) {
-        mostrar_prompt();
+        /* No teclado, o prompt aparece ANTES de a pessoa digitar */
+        if (entrada_e_o_teclado) {
+            mostrar_prompt();
+        }
 
         /* fgets retorna NULL quando a entrada acaba (Ctrl+D) */
         if (fgets(linha, sizeof(linha), stdin) == NULL) {
@@ -376,7 +444,14 @@ void rodar_terminal(void)
             break;
         }
 
+        /* Vindo de arquivo: primeiro lemos a linha, depois decidimos como mostrar */
         if (!entrada_e_o_teclado) {
+            if (e_comentario(linha)) {
+                mostrar_comentario_do_roteiro(linha);
+                continue;
+            }
+
+            mostrar_prompt();
             printf("%s", linha);
             bool linha_sem_quebra_no_fim = (strchr(linha, '\n') == NULL);
             if (linha_sem_quebra_no_fim) {

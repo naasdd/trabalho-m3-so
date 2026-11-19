@@ -71,7 +71,7 @@ O comando `stat` mostra a ficha inteira:
   Criado:        14/11/2026 12:58:14
   Modificado:    14/11/2026 12:58:14
   Acessado:      14/11/2026 12:58:14
-  Blocos:        0  (1 de no máximo 16)
+  Blocos:        [0]  (1 bloco, máximo 16)
 ```
 
 A última linha é a **localização**: o conteúdo está no bloco 0 do disco simulado.

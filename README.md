@@ -344,7 +344,7 @@ root@minifs:/home# stat a.txt
   Criado:        14/11/2026 12:56:16
   Modificado:    14/11/2026 12:56:16
   Acessado:      14/11/2026 12:56:16
-  Blocos:        0  (1 de no máximo 16)
+  Blocos:        [0]  (1 bloco, máximo 16)
 ```
 
 `a.txt` tem 3 bytes porque o `echo` acrescenta uma quebra de linha (`o`, `i`, `\n`), exatamente como no Linux.

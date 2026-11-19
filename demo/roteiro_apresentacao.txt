@@ -25,7 +25,7 @@ stat notas.txt
 # cp cria um arquivo NOVO: inode novo e blocos novos
 cp notas.txt copia.txt
 stat copia.txt
-# mv NAO copia: mesmo inode, so troca o nome
+# mv NÃO copia: mesmo inode, só troca o nome
 mv copia.txt renomeado.txt
 stat renomeado.txt
 mv renomeado.txt ../projetos
@@ -40,26 +40,26 @@ stat grande.txt
 # apagar abre um "buraco" no disco (o bloco do notas.txt)
 rm notas.txt
 disk
-# o arquivo novo usa os buracos: blocos NAO seguidos (alocacao indexada)
+# o arquivo novo usa os buracos: blocos NÃO seguidos (alocação indexada)
 echo outro texto grande que precisa de tres blocos para caber e por isso vai usar o buraco que ficou livre e mais dois blocos no fim do disco > espalhado.txt
 stat espalhado.txt
 disk
 # ============================================================
-# PARTE 4 - Permissoes RWX (objetivo 3.3)
+# PARTE 4 - Permissões RWX (objetivo 3.3)
 # ============================================================
 echo echo rodando o script da alice > script.sh
 ls -l
-# alice e a dona, mas o arquivo nasceu sem x (644)
+# alice é a dona, mas o arquivo nasceu sem x (644)
 ./script.sh
 chmod 754 script.sh
 ls -l
 ./script.sh
-# bob esta no MESMO GRUPO da alice: vale o trio do grupo (r-x)
+# bob está no MESMO GRUPO da alice: vale o trio do grupo (r-x)
 su bob
 whoami
 ./script.sh
 echo tentando alterar > script.sh
-# guest e de OUTRO grupo: vale o trio dos outros (r--)
+# guest é de OUTRO grupo: vale o trio dos outros (r--)
 su guest
 whoami
 cat script.sh
@@ -67,7 +67,7 @@ cat script.sh
 chmod 777 script.sh
 rm script.sh
 mkdir invasao
-# root ignora as permissoes
+# root ignora as permissões
 su root
 ./script.sh
 # ============================================================

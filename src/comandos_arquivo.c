@@ -354,17 +354,22 @@ void comando_stat(const char *caminho)
     imprimir_data("Acessado:",   fcb->data_do_ultimo_acesso);
 
     /* A lista de blocos: é aqui que se vê a alocação indexada */
+    /* Ex.: "Blocos:  [0, 5, 6]  (3 blocos, máximo 16)" */
     printf("  %-14s ", "Blocos:");
     if (fcb->quantidade_de_blocos == 0) {
-        printf("nenhum");
+        printf("nenhum (arquivo vazio)\n");
+        return;
     }
+    printf("[");
     for (int i = 0; i < fcb->quantidade_de_blocos; i++) {
         if (i > 0) {
             printf(", ");
         }
         printf("%d", fcb->blocos_do_arquivo[i]);
     }
-    printf("  (%d de no máximo %d)\n", fcb->quantidade_de_blocos, MAXIMO_DE_BLOCOS_POR_ARQUIVO);
+    const char *palavra_bloco = (fcb->quantidade_de_blocos == 1) ? "bloco" : "blocos";
+    printf("]  (%d %s, máximo %d)\n",
+           fcb->quantidade_de_blocos, palavra_bloco, MAXIMO_DE_BLOCOS_POR_ARQUIVO);
 }
 
 
